@@ -1,0 +1,12 @@
+module Components
+singleton AppTheme 1.0 AppTheme.qml
+Sidebar 1.0 Sidebar.qml
+TitleBar 1.0 TitleBar.qml
+LibraryPanel 1.0 LibraryPanel.qml
+EditorPanel 1.0 EditorPanel.qml
+AppMenu 1.0 AppMenu.qml
+ModernScrollBar 1.0 ModernScrollBar.qml
+AboutPage 1.0 AboutPage.qml
+BackupPage 1.0 BackupPage.qml
+SettingsPage 1.0 SettingsPage.qml
+TutorialPage 1.0 TutorialPage.qml

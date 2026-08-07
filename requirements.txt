@@ -1,0 +1,6 @@
+# Runtime dependencies for Shobdo Calok
+PySide6==6.10.1
+pynput==1.8.1
+pyperclip==1.9.0
+requests==2.32.3
+pywin32==310
