@@ -8,6 +8,7 @@ env/
 
 # ── Secrets & user data (NEVER commit) ────────────────────────────────────
 **/client_secret.json
+!textqml/client_secret.example.json
 **/google_token.json
 **/AppData/
 **/settings.ini

@@ -45,6 +45,10 @@ python textqml\main.py
 
 Or simply double-click `Run_ShobdoCalok.bat`.
 
+### Google Drive backup
+
+Google Drive backup needs your own OAuth credentials. Copy `textqml/client_secret.example.json` to `textqml/client_secret.json` and fill in your **client_id** and **client_secret** from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials). This file is git-ignored and never published.
+
 ## Building a portable EXE
 
 ```bash

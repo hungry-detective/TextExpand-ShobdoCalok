@@ -1,20 +1,29 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
+
+_datas = [
+    ('Components', 'Components'),
+    ('viewmodels', 'viewmodels'),
+    ('framelesswindow', 'framelesswindow'),
+    ('icons', 'icons'),
+    ('main.qml', '.'),
+    ('version.py', '.'),
+    ('MaterialSymbolsOutlined.ttf', '.'),
+    ('app-icon.svg', '.'),
+    ('app-icon.ico', '.'),
+]
+
+# Bundle Google OAuth credentials ONLY if present locally (never committed).
+# Skip silently otherwise so CI/public builds still succeed.
+if os.path.exists('client_secret.json'):
+    _datas.append(('client_secret.json', '.'))
+
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('Components', 'Components'),
-        ('viewmodels', 'viewmodels'),
-        ('framelesswindow', 'framelesswindow'),
-        ('icons', 'icons'),
-        ('main.qml', '.'),
-        ('version.py', '.'),
-        ('MaterialSymbolsOutlined.ttf', '.'),
-        ('app-icon.svg', '.'),
-        ('app-icon.ico', '.'),
-    ],
+    datas=_datas,
     hiddenimports=[
         'pynput.keyboard._win32', 
         'pynput.mouse._win32',
