@@ -27,17 +27,16 @@ jobs:
           pip install -r requirements.txt pyinstaller
 
       - name: Build portable app
-        working-directory: textqml
         run: pyinstaller --noconfirm --clean ShobdoCalok.spec
 
       - name: Sanity check build
-        working-directory: textqml/dist/ShobdoCalok
+        working-directory: dist/ShobdoCalok
         run: |
           if (-not (Test-Path "ShobdoCalok.exe")) { throw "ShobdoCalok.exe missing" }
           if (-not (Test-Path "_internal")) { throw "_internal missing" }
 
       - name: Zip portable build
-        working-directory: textqml/dist
+        working-directory: dist
         run: Compress-Archive -Path "ShobdoCalok" -DestinationPath "ShobdoCalok-portable.zip" -Force
 
       - name: Determine version from tag
@@ -45,7 +44,7 @@ jobs:
         run: echo "version=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_OUTPUT
 
       - name: Rename zip with version
-        working-directory: textqml/dist
+        working-directory: dist
         run: |
           $v = "${{ steps.version.outputs.version }}"
           Rename-Item "ShobdoCalok-portable.zip" "ShobdoCalok-v${v}-portable.zip"
@@ -53,5 +52,5 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: textqml/dist/ShobdoCalok-v*-portable.zip
+          files: dist/ShobdoCalok-v*-portable.zip
           generate_release_notes: true

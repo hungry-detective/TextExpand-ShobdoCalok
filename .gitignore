@@ -7,53 +7,27 @@ venv/
 env/
 
 # ── Secrets & user data (NEVER commit) ────────────────────────────────────
-**/client_secret.json
-!textqml/client_secret.example.json
-**/google_token.json
-**/AppData/
-**/settings.ini
-**/last_backup.txt
+client_secret.json
+google_token.json
+snippets.json
+settings.ini
+last_backup.txt
+AppData/
 
 # ── Build output ──────────────────────────────────────────────────────────
-textqml/build/
-textqml/dist/
-textqml/dist_*/ 
+build/
+dist/
 *.spec.bak
 *.toc
 *.pyz
 *.pkg
-build/
-dist/
 
-textqml/data/
-
+# ── Logs / dev artifacts ──────────────────────────────────────────────────
 *.log
 *.err
 *_error.txt
-textqml/*.txt
-textqml/*.png
-textqml/*.bat
-textqml/animation_check.txt
-textqml/build_*.txt
-textqml/final_*.txt
-textqml/verification*.txt
-textqml/error*.txt
-textqml/error*.log
-textqml/full_*.log
-textqml/full_*.txt
-textqml/test_out.txt
-textqml/_test_engine.py
-textqml/generate_icon.py
-textqml/regenerate_icon.py
-textqml/take_screenshot.py
-textqml/fix_encoding.py
-textqml/final_cleanup.py
-textqml/build_portable.py
-textqml/implementation_plan.md
-textqml/task.md
-textqml/main.spec
-textqml/simple.spec
-textqml/ShobdoCalok_Test.spec
+error*.txt
+test_out.txt
 
 # ── Editors / OS ──────────────────────────────────────────────────────────
 .vscode/

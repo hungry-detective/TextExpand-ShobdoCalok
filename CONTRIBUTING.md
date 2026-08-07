@@ -17,13 +17,12 @@ Thanks for wanting to contribute! Here's how to get started.
    ```
 3. **Run the app** to verify your setup:
    ```bash
-   python textqml\main.py
+   python main.py
    ```
 
 ## Code layout
 
 ```
-textqml/
 ├── main.py                 # Entry point, wires everything together
 ├── main.qml                # Top-level QML window
 ├── version.py              # Central version + GitHub repo config
@@ -45,11 +44,10 @@ textqml/
 
 - Follow the existing code style (4-space indent, snake_case in Python, camelCase in QML).
 - Keep changes focused. One feature or fix per PR.
-- If you touch expansion behaviour, update the boundary tests in `_test_engine.py`.
 
 ## Versioning & releases
 
-- The current version lives in `textqml/version.py` (`APP_VERSION`).
+- The current version lives in `version.py` (`APP_VERSION`).
 - Maintainers create releases by pushing tags (`git tag v1.1.0 && git push origin v1.1.0`).
 - GitHub Actions builds and attaches the portable ZIP automatically.
 

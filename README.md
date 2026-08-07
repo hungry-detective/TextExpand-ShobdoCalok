@@ -40,26 +40,26 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # 3. Launch
-python textqml\main.py
+python main.py
 ```
 
 Or simply double-click `Run_ShobdoCalok.bat`.
 
 ### Google Drive backup
 
-Google Drive backup needs your own OAuth credentials. Copy `textqml/client_secret.example.json` to `textqml/client_secret.json` and fill in your **client_id** and **client_secret** from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials). This file is git-ignored and never published.
+Google Drive backup needs your own OAuth credentials. Copy `client_secret.example.json` to `client_secret.json` and fill in your **client_id** and **client_secret** from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials). This file is git-ignored and never published.
 
 ## Building a portable EXE
 
 ```bash
 pip install pyinstaller
-pyinstaller --noconfirm --clean textqml\ShobdoCalok.spec
-# Output: textqml\dist\ShobdoCalok\
+pyinstaller --noconfirm --clean ShobdoCalok.spec
+# Output: dist\ShobdoCalok\
 ```
 
 ## Releasing a new version
 
-1. Bump `APP_VERSION` in `textqml/version.py`
+1. Bump `APP_VERSION` in `version.py`
 2. Tag & push:
 
 ```bash

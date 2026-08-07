@@ -11,22 +11,21 @@ DEFAULT_DATA = {
         {
             "name": "General",
             "snippets": [
-                {"abbreviation": ".sig",   "content": "Best Regards,\n"},
-                {"abbreviation": ".greet", "content": "Hello! How can I help you today?"}
+                {"abbreviation": ".hello", "content": "Hello! How are you today?"},
+                {"abbreviation": ".bye",   "content": "Goodbye! Take care."}
             ]
         },
         {
-            "name": "Client Emails",
+            "name": "Examples",
             "snippets": [
-                {"abbreviation": ".followup", "content": "Just following up on my previous email. Please let me know if you need anything."},
-                {"abbreviation": ".intro",    "content": "My name is  and I'd love to discuss how we can work together."}
+                {"abbreviation": ".date",  "content": "Today is {date}."},
+                {"abbreviation": ".clip",  "content": "You copied: {clipboard}"}
             ]
         },
         {
             "name": "Code Snippets",
             "snippets": [
-                {"abbreviation": ".ps1",  "content": "Write-Host \"Hello, World!\""},
-                {"abbreviation": ".py",   "content": "if __name__ == '__main__':\n    main()"}
+                {"abbreviation": ".py",    "content": "if __name__ == '__main__':\n    main()"}
             ]
         }
     ]

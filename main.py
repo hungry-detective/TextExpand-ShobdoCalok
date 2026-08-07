@@ -66,7 +66,7 @@ if __name__ == "__main__":
     # ── Windows Taskbar Icon Fix ─────────────────────────────────────────────
     if platform.system() == "Windows":
         import ctypes
-        myappid = 'com.shobdocalok.textqml.v1' # arbitrary string
+        myappid = 'com.shobdocalok.v1' # arbitrary string
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
     # ── PyInstaller fixes ──────────────────────────────────────────────────────
