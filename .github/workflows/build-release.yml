@@ -42,7 +42,7 @@ jobs:
 
       - name: Determine version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $env:GITHUB_OUTPUT
+        run: echo "version=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_OUTPUT
 
       - name: Rename zip with version
         working-directory: textqml/dist
