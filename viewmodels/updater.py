@@ -36,8 +36,51 @@ except Exception:  # pragma: no cover - fallback for odd import setups
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
 _HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "ShobdoCalok-Updater"}
-# If a GitHub token is available (e.g. from CI), use it for higher rate limits.
-_token = os.environ.get("GITHUB_TOKEN", "")
+
+
+def _find_github_token() -> str:
+    """Try to find a GitHub token for authenticated API requests.
+
+    Checks (in order):
+      1. GITHUB_TOKEN / GH_TOKEN environment variables
+      2. gh CLI config file  (~/.config/gh/hosts.yml)  — Linux / macOS
+      3. gh auth token command  — works when token is in OS keyring (Windows)
+    """
+    for var in ("GITHUB_TOKEN", "GH_TOKEN"):
+        tok = os.environ.get(var, "").strip()
+        if tok:
+            return tok
+
+    # gh CLI stores its token in a YAML file on Linux/macOS; parse without PyYAML.
+    hosts = os.path.join(
+        os.path.expanduser("~"), ".config", "gh", "hosts.yml"
+    )
+    try:
+        with open(hosts, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("oauth_token:"):
+                    return line.split(":", 1)[1].strip().strip("'\"")
+    except Exception:
+        pass
+
+    # On Windows the token lives in the OS keyring; ask gh directly.
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        tok = result.stdout.strip()
+        if result.returncode == 0 and tok:
+            return tok
+    except Exception:
+        pass
+
+    return ""
+
+
+_token = _find_github_token()
 if _token:
     _HEADERS["Authorization"] = f"Bearer {_token}"
 
