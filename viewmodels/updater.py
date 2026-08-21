@@ -35,6 +35,12 @@ except Exception:  # pragma: no cover - fallback for odd import setups
 
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
+_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "ShobdoCalok-Updater"}
+# If a GitHub token is available (e.g. from CI), use it for higher rate limits.
+_token = os.environ.get("GITHUB_TOKEN", "")
+if _token:
+    _HEADERS["Authorization"] = f"Bearer {_token}"
+
 
 def _version_tuple(v: str):
     """Turn 'v1.2.3' or '1.2.3' into a comparable tuple of ints."""
@@ -114,7 +120,7 @@ class UpdaterViewModel(QObject):
             import requests
             self._set_checking(True)
             self._emit_status("Checking for updates…")
-            resp = requests.get(RELEASES_API, timeout=30)
+            resp = requests.get(RELEASES_API, headers=_HEADERS, timeout=30)
             if resp.status_code == 404:
                 self._emit_status(
                     "No releases found yet. Updates are published as GitHub Releases."
