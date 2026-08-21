@@ -178,6 +178,13 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Failed to apply window effects: {e}")
 
+        # Restart keyboard hook after Windows sleep/resume
+        def _on_system_resume():
+            print("[Main] System resumed — restarting expansion engine")
+            expansion_engine.restart()
+
+        event_filter.on_resume_callback = _on_system_resume
+
     # ── System Tray ────────────────────────────────────────────────────────────
     # Resolve tray icon path correctly for bundle. Prefer the crisp multi-size
     # ICO (renders best in the Windows tray), then PNG, then SVG.
@@ -289,6 +296,16 @@ QMenu::separator {
         lambda reason: (root_window.showNormal(), root_window.raise_()) \
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick else None
     )
+
+    # Periodic health check: restart the keyboard hook if it died unexpectedly
+    def _health_check():
+        if expansion_engine.is_enabled and not expansion_engine.is_alive():
+            print("[Main] Keyboard hook is dead — auto-restarting")
+            expansion_engine.restart()
+
+    _health_timer = QTimer()
+    _health_timer.timeout.connect(_health_check)
+    _health_timer.start(5000)  # check every 5 seconds
 
     def _cleanup():
         expansion_engine.stop()

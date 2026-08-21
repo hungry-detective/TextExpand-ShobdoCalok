@@ -19,11 +19,17 @@ import win32gui
 from .c_structures import MINMAXINFO, NCCALCSIZE_PARAMS
 
 
+WM_POWERBROADCAST = 0x0218
+PBT_APMRESUMEAUTOMATIC = 0x0012
+PBT_APMRESUMECRITICAL = 0x0006
+
+
 class WindowsEventFilter(PySide6.QtCore.QAbstractNativeEventFilter):
     def __init__(self, border_width=None) -> None:
         super().__init__()
         self.border_width = border_width
         self.monitor_info = None
+        self.on_resume_callback = None
 
     def nativeEventFilter(self, eventType, message):
         msg = ctypes.wintypes.MSG.from_address(message.__int__())
@@ -91,6 +97,10 @@ class WindowsEventFilter(PySide6.QtCore.QAbstractNativeEventFilter):
                 info.ptMaxPosition.x = abs(window_rect[0] - monitor_rect[0])
                 info.ptMaxPosition.y = abs(window_rect[1] - monitor_rect[1])
                 return True, 1
+        elif msg.message == WM_POWERBROADCAST:
+            if msg.wParam in (PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMECRITICAL):
+                if self.on_resume_callback:
+                    self.on_resume_callback()
         return False, 0
 
     @classmethod

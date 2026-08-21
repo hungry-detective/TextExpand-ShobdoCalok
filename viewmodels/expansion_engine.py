@@ -87,6 +87,23 @@ class ExpansionEngine(QObject):
     def stop(self):
         if self._listener:
             self._listener.stop()
+            self._listener = None
+
+    def restart(self):
+        """Stop the current listener and start a new one.
+
+        Called after Windows sleep/resume because the OS removes the
+        low-level keyboard hook (WH_KEYBOARD_LL) during the transition.
+        """
+        print("[ExpansionEngine] Restarting keyboard listener")
+        self.stop()
+        with self._lock:
+            self._buffer = ""
+        self.start()
+
+    def is_alive(self) -> bool:
+        """Return True if the keyboard listener thread is still running."""
+        return self._listener is not None and self._listener.is_alive()
 
     def set_enabled(self, enabled: bool):
         self._enabled = enabled

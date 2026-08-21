@@ -163,6 +163,95 @@ Item {
             opacity: 0.2
         }
 
+        // ── Check for Updates button ─────────────────────────────────────
+        Rectangle {
+            Layout.alignment: Qt.AlignHCenter
+            width: updateBtnRow.implicitWidth + 32
+            height: 38; radius: 12
+            color: updateMa.pressed ? AppTheme.primaryDark
+                 : updateMa.containsMouse ? AppTheme.primaryLight
+                 : "transparent"
+            border.color: AppTheme.primary
+            border.width: 1
+
+            Row {
+                id: updateBtnRow
+                anchors.centerIn: parent
+                spacing: 8
+
+                Text {
+                    text: "system_update"
+                    font.family: "Material Symbols Outlined"
+                    font.pixelSize: 18
+                    color: AppTheme.primary
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Text {
+                    id: updateBtnLabel
+                    text: {
+                        if (!updaterViewModel) return "Check for Updates"
+                        if (updaterViewModel.downloading) return "Installing…"
+                        if (updaterViewModel.checking) return "Checking…"
+                        if (updaterViewModel.updateAvailable)
+                            return "Update v" + updaterViewModel.latestVersion
+                        return "Check for Updates"
+                    }
+                    font.family: "Inter"
+                    font.pixelSize: 13
+                    font.bold: true
+                    color: AppTheme.primary
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
+            // Progress bar during download
+            Rectangle {
+                visible: updaterViewModel && updaterViewModel.downloading
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.bottomMargin: 2
+                anchors.leftMargin: 2
+                width: (parent.width - 4) * (updaterViewModel ? updaterViewModel.progress : 0)
+                height: 2; radius: 1
+                color: AppTheme.primary
+            }
+
+            MouseArea {
+                id: updateMa
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: {
+                    if (!updaterViewModel) return
+                    if (updaterViewModel.updateAvailable)
+                        updaterViewModel.downloadAndInstall()
+                    else
+                        updaterViewModel.checkForUpdate()
+                }
+            }
+
+            Connections {
+                target: updaterViewModel
+                function onStatusMessage(msg) {
+                    updateBtnLabel.text = msg
+                    // Reset to default label after 4 seconds
+                    resetLabelTimer.restart()
+                }
+            }
+
+            Timer {
+                id: resetLabelTimer
+                interval: 4000
+                onTriggered: {
+                    if (!updaterViewModel) return
+                    if (updaterViewModel.updateAvailable)
+                        updateBtnLabel.text = "Update v" + updaterViewModel.latestVersion
+                    else
+                        updateBtnLabel.text = "Check for Updates"
+                }
+            }
+        }
+
         // ── Footer ────────────────────────────────────────────────────────
         Text {
             Layout.alignment: Qt.AlignHCenter
