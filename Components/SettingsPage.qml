@@ -161,13 +161,41 @@ Item {
                         activeColor: "#22c55e"
                         checked: !!updaterViewModel && updaterViewModel.updateAvailable
                         isButton: true
-                        buttonText: updaterViewModel.updateAvailable ? "Download" : "Check"
+                        buttonText: updaterViewModel.downloading
+                                   ? Math.round(updaterViewModel.progress * 100) + "%"
+                                   : (updaterViewModel.updateAvailable ? "Download" : "Check")
+                        buttonEnabled: !updaterViewModel.downloading && !updaterViewModel.checking
                         onToggled: (value) => {
                             if (!updaterViewModel) return
                             if (updaterViewModel.updateAvailable)
                                 updaterViewModel.downloadAndInstall()
                             else
                                 updaterViewModel.checkForUpdate()
+                        }
+                    }
+                    // Download progress bar
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 48
+                        Layout.rightMargin: 12
+                        height: updaterViewModel.downloading ? 20 : 0
+                        visible: updaterViewModel.downloading
+                        radius: 10
+                        color: AppTheme.isDark ? "#1a1d23" : "#f1f5f9"
+                        clip: true
+                        Behavior on height { NumberAnimation { duration: 200 } }
+                        Rectangle {
+                            width: parent.width * updaterViewModel.progress
+                            height: parent.height
+                            radius: 10
+                            color: AppTheme.primary
+                            Behavior on width { NumberAnimation { duration: 100 } }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Downloading... " + Math.round(updaterViewModel.progress * 100) + "%"
+                            font.family: "Inter"; font.pixelSize: 10; font.bold: true
+                            color: "white"
                         }
                     }
                 }
@@ -245,6 +273,7 @@ Item {
         property bool checked: false
         property bool isButton: false
         property string buttonText: ""
+        property bool buttonEnabled: true
         signal toggled(bool value)
 
         Layout.fillWidth: true; height: 60; radius: 14
@@ -326,12 +355,17 @@ Item {
                 anchors.centerIn: parent
                 width: 82; height: 30; radius: 8
                 visible: rowRoot.isButton
-                color: btnHover.hovered ? AppTheme.primaryHover : AppTheme.primary
+                color: !rowRoot.buttonEnabled ? (AppTheme.isDark ? "#3a3d47" : "#d1d5db")
+                       : (btnHover.hovered ? AppTheme.primaryHover : AppTheme.primary)
                 HoverHandler { id: btnHover }
-                TapHandler { onTapped: rowRoot.toggled(true) }
+                TapHandler {
+                    enabled: rowRoot.buttonEnabled
+                    onTapped: rowRoot.toggled(true)
+                }
                 Text {
                     anchors.centerIn: parent; text: rowRoot.buttonText
-                    font.family: "Inter"; font.pixelSize: 10; font.bold: true; color: "white"
+                    font.family: "Inter"; font.pixelSize: 10; font.bold: true
+                    color: rowRoot.buttonEnabled ? "white" : AppTheme.textSecondary
                 }
             }
         }

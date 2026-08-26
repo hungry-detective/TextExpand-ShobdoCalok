@@ -290,13 +290,22 @@ set "TMPEXTRACT={extract_to}"
 set "ZIPFILE={zip_path}"
 set "OLDINTERNAL=%APP%\\_internal"
 
-rem Wait until the running app has fully exited
+rem Wait until the running app has fully exited (max 30 seconds)
+set /a COUNT=0
 :waitloop
 tasklist /FI "IMAGENAME eq ShobdoCalok.exe" 2>nul | find /I "ShobdoCalok.exe" >nul
 if not errorlevel 1 (
+    set /a COUNT+=1
+    if !COUNT! GEQ 30 (
+        echo Timed out waiting for app to exit
+        goto cleanup
+    )
     timeout /t 1 /nobreak >nul
     goto waitloop
 )
+
+rem Small delay to ensure file handles are released
+timeout /t 2 /nobreak >nul
 
 rem Replace program files (never touch AppData)
 if exist "%OLDINTERNAL%" rmdir /s /q "%OLDINTERNAL%"
@@ -305,6 +314,7 @@ xcopy "%NEW%\\*" "%APP%\\" /e /i /y /h /q
 rem Relaunch the updated app
 start "" "%APP%\\ShobdoCalok.exe"
 
+:cleanup
 rem Clean up the download + extract leftovers
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
 if exist "%ZIPFILE%" del /q "%ZIPFILE%"
@@ -328,7 +338,7 @@ del "%~f0"
             raise RuntimeError(f"Could not start the updater: {e}")
 
         # Give the batch script a moment to take over, then exit.
-        time.sleep(1.0)
+        time.sleep(0.5)
         from PySide6.QtCore import QCoreApplication
         QCoreApplication.quit()
 
