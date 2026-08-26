@@ -213,7 +213,7 @@ Item {
 
             Text {
                 Layout.alignment: Qt.AlignHCenter
-                text: "Shobdo Calok  v1.0.0"
+                text: "Shobdo Calok  v" + (updaterViewModel ? updaterViewModel.currentVersion : "1.0.0")
                 font.family: "Inter"; font.pixelSize: 11
                 color: AppTheme.textSecondary; opacity: 0.5
             }

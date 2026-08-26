@@ -26,6 +26,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
 
+      - name: Write Google OAuth credentials
+        if: env.GOOGLE_CLIENT_SECRET_JSON != ''
+        env:
+          GOOGLE_CLIENT_SECRET_JSON: ${{ secrets.GOOGLE_CLIENT_SECRET_JSON }}
+        run: Set-Content -Path "client_secret.json" -Value $env:GOOGLE_CLIENT_SECRET_JSON
+
       - name: Build portable app
         run: pyinstaller --noconfirm --clean ShobdoCalok.spec
 

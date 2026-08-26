@@ -277,14 +277,27 @@ QMenu::separator {
     _pause_icon  = QIcon(os.path.join(_bundle_dir, "icon-tray-pause.svg"))
     _resume_icon = QIcon(os.path.join(_bundle_dir, "icon-tray-resume.svg"))
     _quit_icon   = QIcon(os.path.join(_bundle_dir, "icon-tray-quit.svg"))
+    _update_icon = QIcon(os.path.join(_bundle_dir, "icon-tray-update.svg"))
 
     show_action    = QAction(_show_icon,  "Show Application")
     toggle_action  = QAction(_pause_icon, "Pause Expansion")
+    update_action  = QAction(_update_icon, "Check for Updates")
     quit_action    = QAction(_quit_icon,  "Quit")
 
     show_action.triggered.connect(root_window.showNormal)
     show_action.triggered.connect(root_window.raise_)
     quit_action.triggered.connect(app.quit)
+
+    def _check_for_updates():
+        updater_vm.checkForUpdate()
+        tray_icon.showMessage(
+            "Shobdo Calok",
+            "Checking for updates...",
+            QSystemTrayIcon.MessageIcon.Information,
+            2000
+        )
+
+    update_action.triggered.connect(_check_for_updates)
 
     def _toggle_expansion():
         enabled = snippet_vm.toggleEnabled()
@@ -299,9 +312,17 @@ QMenu::separator {
 
     toggle_action.triggered.connect(_toggle_expansion)
 
+    def _on_updater_status(msg):
+        if msg and "available" in msg.lower():
+            tray_icon.showMessage("Shobdo Calok — Update Available", msg,
+                                 QSystemTrayIcon.MessageIcon.Information, 5000)
+
+    updater_vm.statusMessage.connect(_on_updater_status)
+
     tray_menu.addAction(show_action)
     tray_menu.addSeparator()
     tray_menu.addAction(toggle_action)
+    tray_menu.addAction(update_action)
     tray_menu.addSeparator()
     tray_menu.addAction(quit_action)
 
