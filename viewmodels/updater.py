@@ -450,8 +450,10 @@ class UpdaterViewModel(QObject):
         """Write a batch script that swaps program files after this app exits."""
         app_root = self._app_root
         bat = os.path.join(self._update_dir, "apply_update.bat")
+        log_file = os.path.join(self._update_dir, "update_log.txt")
 
         # Use absolute paths for everything to avoid drive letter issues
+        # All output is redirected to a log file for debugging
         script = f"""@echo off
 setlocal enabledelayedexpansion
 set "APP={app_root}"
@@ -459,46 +461,74 @@ set "NEW={new_root}"
 set "TMPEXTRACT={extract_to}"
 set "ZIPFILE={zip_path}"
 set "OLDINTERNAL=%APP%\\_internal"
+set "LOG={log_file}"
 
-echo ShobdoCalok Updater - Waiting for app to exit...
+echo ===== ShobdoCalok Updater ===== > "%LOG%"
+echo Timestamp: %DATE% %TIME% >> "%LOG%"
+echo APP=%APP% >> "%LOG%"
+echo NEW=%NEW% >> "%LOG%"
+echo TMPEXTRACT=%TMPEXTRACT% >> "%LOG%"
+echo ZIPFILE=%ZIPFILE% >> "%LOG%"
+echo. >> "%LOG%"
 
-rem Wait until the running app has fully exited (max 30 seconds)
+echo [1/5] Waiting for app to exit... >> "%LOG%"
 set /a COUNT=0
 :waitloop
 tasklist /FI "IMAGENAME eq ShobdoCalok.exe" 2>nul | find /I "ShobdoCalok.exe" >nul
 if not errorlevel 1 (
     set /a COUNT+=1
+    echo Still waiting... (!COUNT!/30) >> "%LOG%"
     if !COUNT! GEQ 30 (
-        echo Timed out waiting for app to exit, proceeding anyway...
+        echo WARNING: Timed out waiting, proceeding anyway >> "%LOG%"
         goto apply
     )
     timeout /t 1 /nobreak >nul
     goto waitloop
 )
+echo App exited after !COUNT! seconds >> "%LOG%"
 
 :apply
-rem Delay to ensure file handles are released
-timeout /t 2 /nobreak >nul
+echo [2/5] Waiting for file handles to release... >> "%LOG%"
+timeout /t 3 /nobreak >nul
 
-echo Replacing program files...
-rem Delete old _internal folder
-if exist "%OLDINTERNAL%" rmdir /s /q "%OLDINTERNAL%"
+echo [3/5] Checking source exists... >> "%LOG%"
+if not exist "%NEW%" (
+    echo ERROR: Source folder does not exist: %NEW% >> "%LOG%"
+    goto cleanup
+)
+echo Source OK >> "%LOG%"
 
-rem Copy new files using xcopy (works across drives)
-xcopy "%NEW%\\*" "%APP%\\" /e /i /y /h /q
-if errorlevel 1 (
-    echo xcopy failed, trying robocopy...
-    robocopy "%NEW%" "%APP%" /E /IS /NFL /NDL /NJH /NJS /NC /NS /NP
+echo [4/5] Deleting old _internal folder... >> "%LOG%"
+if exist "%OLDINTERNAL%" (
+    rmdir /s /q "%OLDINTERNAL%"
+    if exist "%OLDINTERNAL%" (
+        echo WARNING: Could not fully remove _internal >> "%LOG%"
+    ) else (
+        echo Old _internal removed >> "%LOG%"
+    )
+) else (
+    echo No old _internal folder found, skipping >> "%LOG%"
 )
 
-echo Starting ShobdoCalok...
+echo [5/5] Copying new files... >> "%LOG%"
+xcopy "%NEW%\\*" "%APP%\\" /e /i /y /h /q >> "%LOG%" 2>&1
+if errorlevel 1 (
+    echo xcopy failed (errorlevel !errorlevel!), trying robocopy... >> "%LOG%"
+    robocopy "%NEW%" "%APP%" /E /IS /NFL /NDL /NJH /NJS /NC /NS /NP >> "%LOG%" 2>&1
+    echo robocopy finished with errorlevel !errorlevel! >> "%LOG%"
+) else (
+    echo xcopy succeeded >> "%LOG%"
+)
+
+echo. >> "%LOG%"
+echo [DONE] Starting ShobdoCalok.exe... >> "%LOG%"
 start "" "%APP%\\ShobdoCalok.exe"
 
 :cleanup
-rem Clean up the download + extract leftovers
+echo Cleaning up temporary files... >> "%LOG%"
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
 if exist "%ZIPFILE%" del /q "%ZIPFILE%"
-del "%~f0"
+del "%~f0" 2>nul
 """
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
             f.write(script.replace("\n", "\r\n"))
