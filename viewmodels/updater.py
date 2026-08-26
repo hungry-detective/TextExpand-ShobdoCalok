@@ -451,13 +451,16 @@ class UpdaterViewModel(QObject):
         app_root = self._app_root
         bat = os.path.join(self._update_dir, "apply_update.bat")
 
+        # Use absolute paths for everything to avoid drive letter issues
         script = f"""@echo off
 setlocal enabledelayedexpansion
-set "APP=%~dp0..\\.."
+set "APP={app_root}"
 set "NEW={new_root}"
 set "TMPEXTRACT={extract_to}"
 set "ZIPFILE={zip_path}"
 set "OLDINTERNAL=%APP%\\_internal"
+
+echo ShobdoCalok Updater - Waiting for app to exit...
 
 rem Wait until the running app has fully exited (max 30 seconds)
 set /a COUNT=0
@@ -466,21 +469,29 @@ tasklist /FI "IMAGENAME eq ShobdoCalok.exe" 2>nul | find /I "ShobdoCalok.exe" >n
 if not errorlevel 1 (
     set /a COUNT+=1
     if !COUNT! GEQ 30 (
-        echo Timed out waiting for app to exit
-        goto cleanup
+        echo Timed out waiting for app to exit, proceeding anyway...
+        goto apply
     )
     timeout /t 1 /nobreak >nul
     goto waitloop
 )
 
-rem Small delay to ensure file handles are released
+:apply
+rem Delay to ensure file handles are released
 timeout /t 2 /nobreak >nul
 
-rem Replace program files (never touch AppData)
+echo Replacing program files...
+rem Delete old _internal folder
 if exist "%OLDINTERNAL%" rmdir /s /q "%OLDINTERNAL%"
-xcopy "%NEW%\\*" "%APP%\\" /e /i /y /h /q
 
-rem Relaunch the updated app
+rem Copy new files using xcopy (works across drives)
+xcopy "%NEW%\\*" "%APP%\\" /e /i /y /h /q
+if errorlevel 1 (
+    echo xcopy failed, trying robocopy...
+    robocopy "%NEW%" "%APP%" /E /IS /NFL /NDL /NJH /NJS /NC /NS /NP
+)
+
+echo Starting ShobdoCalok...
 start "" "%APP%\\ShobdoCalok.exe"
 
 :cleanup

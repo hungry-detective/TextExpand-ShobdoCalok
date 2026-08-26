@@ -212,9 +212,18 @@ Item {
                 visible: updaterViewModel && (updaterViewModel.downloading || updaterViewModel.applying)
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
-                width: (parent.width - 4) * (updaterViewModel ? updaterViewModel.progress : 0)
+                anchors.right: parent.right
+                anchors.margins: 2
                 height: 3; radius: 1
                 color: updaterViewModel.applying ? "#22c55e" : AppTheme.primary
+
+                Rectangle {
+                    width: parent.width * (updaterViewModel ? updaterViewModel.progress : 0)
+                    height: parent.height
+                    radius: 1
+                    color: parent.color
+                    Behavior on width { NumberAnimation { duration: 100 } }
+                }
             }
 
             MouseArea {
