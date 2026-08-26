@@ -238,9 +238,55 @@ Item {
             Connections {
                 target: updaterViewModel
                 function onUpdateAvailableChanged() {
-                    if (updaterViewModel.updateAvailable)
-                        updateBtnLabel.text = "Update v" + updaterViewModel.latestVersion + " (you have " + (typeof updaterViewModel.currentVersion !== "undefined" ? updaterViewModel.currentVersion : "?") + ")"
+                    if (updaterViewModel.updateAvailable) {
+                        updateBtnLabel.text = "Update v" + updaterViewModel.latestVersion + " (you have " + updaterViewModel.currentVersion + ")"
+                        updateStatusLabel.text = ""
+                    } else if (!updaterViewModel.checking) {
+                        updateStatusLabel.text = "You're up to date"
+                        updateStatusLabel.color = "#22c55e"
+                        upToDateTimer.restart()
+                    }
                 }
+                function onStatusMessage(msg) {
+                    if (!msg) return
+                    if (msg.indexOf("failed") !== -1 || msg.indexOf("error") !== -1) {
+                        updateStatusLabel.text = msg
+                        updateStatusLabel.color = "#ef4444"
+                    } else if (msg.indexOf("up to date") !== -1) {
+                        updateStatusLabel.text = "You're up to date"
+                        updateStatusLabel.color = "#22c55e"
+                    } else if (msg.indexOf("available") !== -1) {
+                        updateStatusLabel.text = msg
+                        updateStatusLabel.color = AppTheme.primary
+                    } else {
+                        updateStatusLabel.text = msg
+                        updateStatusLabel.color = AppTheme.textSecondary
+                    }
+                    statusResetTimer.restart()
+                }
+            }
+        }
+
+        // ── Update status text ────────────────────────────────────────────
+        Text {
+            id: updateStatusLabel
+            Layout.alignment: Qt.AlignHCenter
+            visible: text.length > 0
+            text: ""
+            font.family: "Inter"
+            font.pixelSize: 11
+            color: AppTheme.textSecondary
+            height: visible ? implicitHeight : 0
+
+            Timer {
+                id: statusResetTimer
+                interval: 5000
+                onTriggered: updateStatusLabel.text = ""
+            }
+            Timer {
+                id: upToDateTimer
+                interval: 4000
+                onTriggered: updateStatusLabel.text = ""
             }
         }
 
