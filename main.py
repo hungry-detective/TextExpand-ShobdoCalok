@@ -322,9 +322,29 @@ QMenu::separator {
     toggle_action.triggered.connect(_toggle_expansion)
 
     def _on_updater_status(msg):
-        if msg and "available" in msg.lower():
-            tray_icon.showMessage("Shobdo Calok — Update Available", msg,
-                                 QSystemTrayIcon.MessageIcon.Information, 5000)
+        if not msg:
+            return
+        if "available" in msg.lower():
+            tray_icon.showMessage(
+                "Shobdo Calok — Update Available",
+                msg,
+                QSystemTrayIcon.MessageIcon.Information,
+                8000
+            )
+        elif "up to date" in msg.lower():
+            tray_icon.showMessage(
+                "Shobdo Calok",
+                msg,
+                QSystemTrayIcon.MessageIcon.Information,
+                3000
+            )
+        elif "failed" in msg.lower() or "error" in msg.lower():
+            tray_icon.showMessage(
+                "Shobdo Calok — Update Error",
+                msg,
+                QSystemTrayIcon.MessageIcon.Warning,
+                5000
+            )
 
     updater_vm.statusMessage.connect(_on_updater_status)
 

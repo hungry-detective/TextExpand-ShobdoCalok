@@ -166,14 +166,28 @@ Item {
         // ── Check for Updates button ─────────────────────────────────────
         Rectangle {
             Layout.alignment: Qt.AlignHCenter
-            width: updateBtnRow.implicitWidth + 32
+            Layout.preferredWidth: 260
             height: 38; radius: 12
             color: updateMa.pressed ? AppTheme.primaryDark
                  : updateMa.containsMouse ? AppTheme.primaryLight
-                 : "transparent"
+                 : AppTheme.isDark ? "#1a1d23" : "#f1f5f9"
             border.color: AppTheme.primary
             border.width: 1
             clip: true
+
+            // Progress fill behind text
+            Rectangle {
+                id: updateProgressFill
+                visible: updaterViewModel && (updaterViewModel.downloading || updaterViewModel.applying)
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: parent.width * (updaterViewModel ? updaterViewModel.progress : 0)
+                radius: 12
+                color: updaterViewModel.applying ? "#22c55e" : AppTheme.primary
+                opacity: 0.2
+                Behavior on width { NumberAnimation { duration: 100 } }
+            }
 
             Row {
                 id: updateBtnRow
@@ -193,36 +207,18 @@ Item {
                     text: {
                         if (!updaterViewModel) return "Check for Updates"
                         if (updaterViewModel.applying) return "Applying…"
-                        if (updaterViewModel.downloading) return Math.round(updaterViewModel.progress * 100) + "%"
+                        if (updaterViewModel.downloading)
+                            return "Downloading… " + Math.round(updaterViewModel.progress * 100) + "%"
                         if (updaterViewModel.checking) return "Checking…"
                         if (updaterViewModel.updateAvailable)
-                            return "Update v" + updaterViewModel.latestVersion
+                            return "Update v" + updaterViewModel.latestVersion + " (you have " + (typeof updaterViewModel.currentVersion !== "undefined" ? updaterViewModel.currentVersion : "?") + ")"
                         return "Check for Updates"
                     }
                     font.family: "Inter"
-                    font.pixelSize: 13
+                    font.pixelSize: 12
                     font.bold: true
                     color: AppTheme.primary
                     anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-
-            // Progress bar during download (clipped inside button)
-            Rectangle {
-                visible: updaterViewModel && (updaterViewModel.downloading || updaterViewModel.applying)
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 2
-                height: 3; radius: 1
-                color: updaterViewModel.applying ? "#22c55e" : AppTheme.primary
-
-                Rectangle {
-                    width: parent.width * (updaterViewModel ? updaterViewModel.progress : 0)
-                    height: parent.height
-                    radius: 1
-                    color: parent.color
-                    Behavior on width { NumberAnimation { duration: 100 } }
                 }
             }
 
@@ -241,22 +237,9 @@ Item {
 
             Connections {
                 target: updaterViewModel
-                function onStatusMessage(msg) {
-                    updateBtnLabel.text = msg
-                    // Reset to default label after 4 seconds
-                    resetLabelTimer.restart()
-                }
-            }
-
-            Timer {
-                id: resetLabelTimer
-                interval: 4000
-                onTriggered: {
-                    if (!updaterViewModel) return
+                function onUpdateAvailableChanged() {
                     if (updaterViewModel.updateAvailable)
-                        updateBtnLabel.text = "Update v" + updaterViewModel.latestVersion
-                    else
-                        updateBtnLabel.text = "Check for Updates"
+                        updateBtnLabel.text = "Update v" + updaterViewModel.latestVersion + " (you have " + (typeof updaterViewModel.currentVersion !== "undefined" ? updaterViewModel.currentVersion : "?") + ")"
                 }
             }
         }
