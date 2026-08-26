@@ -9,12 +9,19 @@ Works with the portable (onedir) build produced by GitHub Actions:
 The updater:
   1. Queries the GitHub Releases API for the newest release.
   2. Compares its version against the running APP_VERSION.
-  3. Downloads the portable ZIP asset into AppData/update/.
-  4. Extracts it, then hands off to a detached batch script that waits for
-     the app to exit, swaps the program files, and relaunches the app —
-     preserving AppData/ at all times.
+  3. Downloads the portable ZIP asset into AppData/update/ (resumes if interrupted).
+  4. Verifies SHA256 checksum against .sha256 file in the release.
+  5. Extracts with progress tracking, then hands off to a detached batch script
+     that waits for the app to exit, swaps the program files, and relaunches.
+
+Features:
+  - Resume interrupted downloads (HTTP Range)
+  - Automatic retry on failure (3 attempts with backoff)
+  - SHA256 checksum verification
+  - Extraction progress tracking
 """
 
+import hashlib
 import json
 import os
 import re
@@ -37,21 +44,17 @@ RELEASES_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/relea
 
 _HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "ShobdoCalok-Updater"}
 
+MAX_RETRIES = 3
+RETRY_BACKOFF = [1, 3, 8]  # seconds between retries
+
 
 def _find_github_token() -> str:
-    """Try to find a GitHub token for authenticated API requests.
-
-    Checks (in order):
-      1. GITHUB_TOKEN / GH_TOKEN environment variables
-      2. gh CLI config file  (~/.config/gh/hosts.yml)  — Linux / macOS
-      3. gh auth token command  — works when token is in OS keyring (Windows)
-    """
+    """Try to find a GitHub token for authenticated API requests."""
     for var in ("GITHUB_TOKEN", "GH_TOKEN"):
         tok = os.environ.get(var, "").strip()
         if tok:
             return tok
 
-    # gh CLI stores its token in a YAML file on Linux/macOS; parse without PyYAML.
     hosts = os.path.join(
         os.path.expanduser("~"), ".config", "gh", "hosts.yml"
     )
@@ -64,7 +67,6 @@ def _find_github_token() -> str:
     except Exception:
         pass
 
-    # On Windows the token lives in the OS keyring; ask gh directly.
     try:
         result = subprocess.run(
             ["gh", "auth", "token"],
@@ -93,6 +95,15 @@ def _version_tuple(v: str):
     return tuple(int(x) for x in match.groups() if x is not None)
 
 
+def _sha256_file(path: str) -> str:
+    """Compute SHA256 hex digest of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 class UpdaterViewModel(QObject):
     """Exposes update checking / downloading / installing to QML."""
 
@@ -115,6 +126,7 @@ class UpdaterViewModel(QObject):
         self._latest_version = ""
         self._update_available = False
         self._asset_url = ""
+        self._checksum_url = ""
         self._release_url = ""
 
     # ── Properties ─────────────────────────────────────────────────────────────
@@ -187,6 +199,10 @@ class UpdaterViewModel(QObject):
                 (a for a in assets if a.get("name", "").lower().endswith(".zip")),
                 None,
             )
+            checksum_asset = next(
+                (a for a in assets if a.get("name", "").lower().endswith(".sha256")),
+                None,
+            )
 
             current = _version_tuple(APP_VERSION)
             remote = _version_tuple(latest)
@@ -197,6 +213,11 @@ class UpdaterViewModel(QObject):
                 self._asset_url = zip_asset.get("browser_download_url", "")
             else:
                 self._asset_url = ""
+
+            if checksum_asset:
+                self._checksum_url = checksum_asset.get("browser_download_url", "")
+            else:
+                self._checksum_url = ""
 
             if remote > current:
                 self._update_available = True
@@ -212,6 +233,137 @@ class UpdaterViewModel(QObject):
             self._emit_status(f"Update check failed: {e}")
         finally:
             self._set_checking(False)
+
+    # ── Download (with resume + retry) ─────────────────────────────────────────
+
+    def _download_with_resume(self, url: str, dest: str) -> bool:
+        """Download a file with resume support and retry logic.
+
+        Returns True on success, False on failure after all retries.
+        """
+        import requests
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                existing_size = 0
+                if os.path.exists(dest):
+                    existing_size = os.path.getsize(dest)
+
+                headers = dict(_HEADERS)
+                if existing_size > 0:
+                    headers["Range"] = f"bytes={existing_size}-"
+                    self._emit_status(
+                        f"Resuming download from {existing_size / (1<<20):.1f} MB…"
+                    )
+
+                with requests.get(url, headers=headers, stream=True, timeout=120) as r:
+                    if r.status_code == 416:
+                        # Range not satisfiable — file already fully downloaded
+                        self._set_progress(1.0)
+                        return True
+
+                    if r.status_code == 200:
+                        # Server doesn't support Range; start fresh
+                        existing_size = 0
+                    elif r.status_code == 206:
+                        # Partial content — appending
+                        pass
+                    else:
+                        r.raise_for_status()
+
+                    total = int(r.headers.get("Content-Length", 0)) + existing_size
+                    done = existing_size
+
+                    mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
+                    with open(dest, mode) as f:
+                        for chunk in r.iter_content(chunk_size=1 << 20):
+                            if not chunk:
+                                continue
+                            f.write(chunk)
+                            done += len(chunk)
+                            if total:
+                                self._set_progress(min(done / total, 1.0))
+
+                return True
+
+            except Exception as e:
+                if attempt < MAX_RETRIES - 1:
+                    wait = RETRY_BACKOFF[attempt]
+                    self._emit_status(
+                        f"Download failed: {e}. Retrying in {wait}s…"
+                        f" ({attempt + 1}/{MAX_RETRIES})"
+                    )
+                    time.sleep(wait)
+                else:
+                    self._emit_status(f"Download failed after {MAX_RETRIES} attempts: {e}")
+                    return False
+
+        return False
+
+    # ── Extract with progress ──────────────────────────────────────────────────
+
+    def _extract_with_progress(self, zip_path: str, extract_to: str) -> bool:
+        """Extract ZIP file with progress tracking. Returns True on success."""
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                members = zf.namelist()
+                total = len(members)
+                if total == 0:
+                    self._emit_status("Update archive is empty.")
+                    return False
+
+                for i, member in enumerate(members):
+                    zf.extract(member, extract_to)
+                    self._set_progress((i + 1) / total)
+                    if (i + 1) % 50 == 0 or i + 1 == total:
+                        self._emit_status(
+                            f"Extracting… {i + 1}/{total} files"
+                        )
+
+            return True
+        except zipfile.BadZipFile:
+            self._emit_status("Downloaded file is corrupted. Please re-download.")
+            return False
+        except Exception as e:
+            self._emit_status(f"Extraction failed: {e}")
+            return False
+
+    # ── Verify checksum ────────────────────────────────────────────────────────
+
+    def _verify_checksum(self, zip_path: str) -> bool:
+        """Download .sha256 file and verify the ZIP checksum. Returns True if valid."""
+        if not self._checksum_url:
+            self._emit_status("No checksum file available — skipping verification.")
+            return True
+
+        import requests
+
+        try:
+            self._emit_status("Verifying checksum…")
+            resp = requests.get(self._checksum_url, headers=_HEADERS, timeout=30)
+            if resp.status_code != 200:
+                self._emit_status("Could not download checksum — skipping verification.")
+                return True
+
+            # Parse the .sha256 file (format: "<hash>  <filename>" or just "<hash>")
+            text = resp.text.strip()
+            expected_hash = text.split()[0].lower()
+
+            actual_hash = _sha256_file(zip_path)
+
+            if actual_hash == expected_hash:
+                self._emit_status("Checksum verified ✓")
+                return True
+            else:
+                self._emit_status(
+                    f"Checksum mismatch! Expected {expected_hash[:16]}…, "
+                    f"got {actual_hash[:16]}…. Download may be corrupted."
+                )
+                return False
+
+        except Exception as e:
+            self._emit_status(f"Checksum verification failed: {e} — continuing anyway.")
+            return True  # Don't block update on checksum failure
 
     # ── Download + install ─────────────────────────────────────────────────────
 
@@ -231,42 +383,54 @@ class UpdaterViewModel(QObject):
             os.makedirs(self._update_dir, exist_ok=True)
             zip_path = os.path.join(self._update_dir, "ShobdoCalok-latest.zip")
 
+            # ── Phase 1: Download with resume + retry ──────────────────────
             self._set_downloading(True)
             self._set_progress(0.0)
             self._emit_status("Downloading update…")
 
-            with requests.get(self._asset_url, stream=True, timeout=120) as r:
-                r.raise_for_status()
-                total = int(r.headers.get("Content-Length", 0))
-                done = 0
-                with open(zip_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=1 << 20):
-                        if not chunk:
-                            continue
-                        f.write(chunk)
-                        done += len(chunk)
-                        if total:
-                            self._set_progress(min(done / total, 1.0))
+            if not self._download_with_resume(self._asset_url, zip_path):
+                self._set_downloading(False)
+                return
+
             self._set_progress(1.0)
 
+            # ── Phase 2: Verify checksum ───────────────────────────────────
+            if not self._verify_checksum(zip_path):
+                self._emit_status("Update aborted due to checksum failure.")
+                self._set_downloading(False)
+                # Delete corrupted file
+                try:
+                    os.remove(zip_path)
+                except Exception:
+                    pass
+                return
+
+            # ── Phase 3: Extract with progress ─────────────────────────────
             self._emit_status("Extracting update…")
             extract_to = os.path.join(self._update_dir, "extracted")
             if os.path.exists(extract_to):
                 import shutil
                 shutil.rmtree(extract_to, ignore_errors=True)
             os.makedirs(extract_to, exist_ok=True)
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(extract_to)
 
-            # Locate the packaged app folder inside the zip (ShobdoCalok/…)
+            self._set_progress(0.0)
+            if not self._extract_with_progress(zip_path, extract_to):
+                self._set_downloading(False)
+                return
+
+            self._set_progress(1.0)
+
+            # ── Phase 4: Locate new app and apply ──────────────────────────
             new_root = self._find_new_app_root(extract_to)
             if not new_root:
                 self._emit_status("Update file did not contain the app. Please re-download.")
+                self._set_downloading(False)
                 return
 
             self._emit_status("Applying update…")
             self._set_applying(True)
             self._launch_applier(new_root, extract_to, zip_path)
+
         except Exception as e:
             self._emit_status(f"Update failed: {e}")
             self._set_downloading(False)
@@ -280,7 +444,6 @@ class UpdaterViewModel(QObject):
                 candidates.append(root)
         if not candidates:
             return None
-        # Prefer the shallowest path
         return min(candidates, key=lambda p: p.count(os.sep))
 
     def _launch_applier(self, new_root: str, extract_to: str, zip_path: str):
@@ -288,7 +451,6 @@ class UpdaterViewModel(QObject):
         app_root = self._app_root
         bat = os.path.join(self._update_dir, "apply_update.bat")
 
-        # The batch file lives in <app_root>/AppData/update/, so the app root is two levels up.
         script = f"""@echo off
 setlocal enabledelayedexpansion
 set "APP=%~dp0..\\.."
@@ -330,7 +492,6 @@ del "%~f0"
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
             f.write(script.replace("\n", "\r\n"))
 
-        # Launch the batch script detached from this process, then quit the app.
         try:
             creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) \
                 | getattr(subprocess, "DETACHED_PROCESS", 0) \
@@ -344,8 +505,6 @@ del "%~f0"
         except Exception as e:
             raise RuntimeError(f"Could not start the updater: {e}")
 
-        # Force-kill the process so the batch script can replace files.
-        # QCoreApplication.quit() only posts an event and the app may hang.
         time.sleep(0.5)
         os._exit(0)
 

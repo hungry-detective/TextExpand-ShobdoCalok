@@ -64,8 +64,27 @@ jobs:
           $v = "${{ steps.version.outputs.version }}"
           Rename-Item "ShobdoCalok-portable.zip" "ShobdoCalok-v${v}-portable.zip"
 
+      - name: Generate SHA256 checksum
+        working-directory: dist
+        shell: python
+        run: |
+          import glob, hashlib
+          zip_files = glob.glob("ShobdoCalok-v*-portable.zip")
+          if not zip_files:
+              raise Exception("No zip file found")
+          zip_path = zip_files[0]
+          h = hashlib.sha256()
+          with open(zip_path, "rb") as f:
+              for chunk in iter(lambda: f.read(1 << 20), b""):
+                  h.update(chunk)
+          checksum = h.hexdigest()
+          sha_path = zip_path.replace(".zip", ".sha256")
+          with open(sha_path, "w") as f:
+              f.write(f"{checksum}  {zip_path}\n")
+          print(f"SHA256: {checksum}  {zip_path}")
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/ShobdoCalok-v*-portable.zip
+          files: dist/ShobdoCalok-v*-portable.*
           generate_release_notes: true
