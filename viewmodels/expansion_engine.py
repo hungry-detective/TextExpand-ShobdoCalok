@@ -76,30 +76,39 @@ class ExpansionEngine(QObject):
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def start(self):
+    def start(self) -> bool:
+        """Start the keyboard listener. Returns True if it started successfully."""
         self._listener = keyboard.Listener(
             on_press=self._on_press,
             on_release=self._on_release
         )
         self._listener.daemon = True
         self._listener.start()
+        # Give the listener thread a moment to initialize
+        time.sleep(0.2)
+        if not self._listener.is_alive():
+            print("[ExpansionEngine] Listener thread died immediately after start")
+            return False
+        return True
 
     def stop(self):
         if self._listener:
             self._listener.stop()
             self._listener = None
 
-    def restart(self):
+    def restart(self) -> bool:
         """Stop the current listener and start a new one.
 
         Called after Windows sleep/resume because the OS removes the
         low-level keyboard hook (WH_KEYBOARD_LL) during the transition.
+        Returns True if the new listener started successfully.
         """
         print("[ExpansionEngine] Restarting keyboard listener")
         self.stop()
         with self._lock:
             self._buffer = ""
-        self.start()
+        time.sleep(0.1)  # Brief pause before restart
+        return self.start()
 
     def is_alive(self) -> bool:
         """Return True if the keyboard listener thread is still running."""

@@ -132,7 +132,24 @@ if __name__ == "__main__":
         QTimer.singleShot(120, lambda: expansion_engine.resolve_fields(key, result))
 
     expansion_engine.fieldFillRequested.connect(_on_field_fill_requested, Qt.ConnectionType.QueuedConnection)
-    expansion_engine.start()
+
+    # ── Startup with retry ──────────────────────────────────────────────────
+    # The keyboard hook (WH_KEYBOARD_LL) can fail to install on Windows startup
+    # when the input subsystem isn't fully ready. Retry with backoff.
+    import time as _time
+    _time.sleep(0.5)  # Brief initial delay for Windows to finish booting
+    _max_retries = 5
+    _started = False
+    for _attempt in range(_max_retries):
+        print(f"[Main] Starting expansion engine (attempt {_attempt + 1}/{_max_retries})")
+        if expansion_engine.start():
+            print("[Main] Expansion engine started successfully")
+            _started = True
+            break
+        print(f"[Main] Attempt {_attempt + 1} failed, retrying...")
+        _time.sleep(0.5 + _attempt * 0.5)  # 0.5, 1.0, 1.5, 2.0, 2.5 second delays
+    if not _started:
+        print("[Main] WARNING: Expansion engine failed to start after all retries")
 
     # ── QML Engine ─────────────────────────────────────────────────────────────
     engine = QQmlApplicationEngine()
@@ -298,14 +315,25 @@ QMenu::separator {
     )
 
     # Periodic health check: restart the keyboard hook if it died unexpectedly
+    # Uses two phases: fast checks at startup (every 500ms for 30s), then slower (5s)
+    _health_phase = [0]  # Use list for closure mutability
+    _health_start_time = _time.time()
+
     def _health_check():
         if expansion_engine.is_enabled and not expansion_engine.is_alive():
             print("[Main] Keyboard hook is dead — auto-restarting")
             expansion_engine.restart()
 
+        # Switch from fast to slow phase after 30 seconds
+        elapsed = _time.time() - _health_start_time
+        if _health_phase[0] == 0 and elapsed > 30:
+            _health_phase[0] = 1
+            _health_timer.setInterval(5000)
+            print("[Main] Health check: switching to normal 5s interval")
+
     _health_timer = QTimer()
     _health_timer.timeout.connect(_health_check)
-    _health_timer.start(5000)  # check every 5 seconds
+    _health_timer.start(500)  # Start with fast 500ms checks for first 30 seconds
 
     def _cleanup():
         expansion_engine.stop()
