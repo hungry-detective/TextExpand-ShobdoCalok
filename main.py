@@ -113,6 +113,15 @@ if __name__ == "__main__":
     drive_vm = GoogleDriveViewModel(data_dir=data_dir)
     drive_vm.set_snippet_store(snippet_vm.store)
 
+    def _on_restore_complete():
+        snippet_vm.foldersChanged.emit()
+        for name in snippet_vm.store.folder_names():
+            snippet_vm.snippetsChanged.emit(name)
+        if expansion_engine:
+            expansion_engine.refresh_store()
+
+    drive_vm.restoreComplete.connect(_on_restore_complete)
+
     from viewmodels.expansion_engine import ExpansionEngine
     from viewmodels.field_dialog import FieldFillDialog
     from viewmodels.updater import UpdaterViewModel
@@ -177,10 +186,10 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    # Centre window
-    screen = QApplication.primaryScreen().geometry()
-    root_window.setX((screen.width()  - root_window.width())  / 2)
-    root_window.setY((screen.height() - root_window.height()) / 2)
+    # Centre window on available screen space (excludes taskbars, docks, etc.)
+    screen = QApplication.primaryScreen().availableGeometry()
+    root_window.setX(screen.x() + (screen.width()  - root_window.width())  / 2)
+    root_window.setY(screen.y() + (screen.height() - root_window.height()) / 2)
 
     # Native frameless window effects (Windows only)
     if platform.system() == "Windows":

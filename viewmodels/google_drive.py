@@ -83,6 +83,7 @@ class GoogleDriveViewModel(QObject):
     lastBackupChanged  = Signal(str)      # human-readable timestamp or ""
     busyChanged        = Signal(bool)
     statusMessage      = Signal(str)      # transient toast message
+    restoreComplete    = Signal()         # emitted after restore to refresh UI
 
     def __init__(self, data_dir: str, parent=None):
         super().__init__(parent)
@@ -429,6 +430,7 @@ class GoogleDriveViewModel(QObject):
             data = json.loads(content)
             if not self._snippet_store.import_data(data):
                 raise RuntimeError("Backup file is invalid")
+            self.restoreComplete.emit()
             self.statusMessage.emit("Snippets restored from Google Drive")
         except Exception as e:
             self.statusMessage.emit(f"Restore error: {e}")
