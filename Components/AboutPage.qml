@@ -173,6 +173,7 @@ Item {
                  : "transparent"
             border.color: AppTheme.primary
             border.width: 1
+            clip: true
 
             Row {
                 id: updateBtnRow
@@ -191,7 +192,8 @@ Item {
                     id: updateBtnLabel
                     text: {
                         if (!updaterViewModel) return "Check for Updates"
-                        if (updaterViewModel.downloading) return "Installing…"
+                        if (updaterViewModel.applying) return "Applying…"
+                        if (updaterViewModel.downloading) return Math.round(updaterViewModel.progress * 100) + "%"
                         if (updaterViewModel.checking) return "Checking…"
                         if (updaterViewModel.updateAvailable)
                             return "Update v" + updaterViewModel.latestVersion
@@ -205,16 +207,14 @@ Item {
                 }
             }
 
-            // Progress bar during download
+            // Progress bar during download (clipped inside button)
             Rectangle {
-                visible: updaterViewModel && updaterViewModel.downloading
+                visible: updaterViewModel && (updaterViewModel.downloading || updaterViewModel.applying)
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
-                anchors.bottomMargin: 2
-                anchors.leftMargin: 2
                 width: (parent.width - 4) * (updaterViewModel ? updaterViewModel.progress : 0)
-                height: 2; radius: 1
-                color: AppTheme.primary
+                height: 3; radius: 1
+                color: updaterViewModel.applying ? "#22c55e" : AppTheme.primary
             }
 
             MouseArea {

@@ -305,7 +305,10 @@ class SnippetViewModel(QObject):
                 data = json.load(f)
             if not self._store.import_data(data):
                 return "Invalid file: missing 'folders'."
+            # Emit signals to refresh UI
             self.foldersChanged.emit()
+            for name in self._store.folder_names():
+                self.snippetsChanged.emit(name)
             if self._engine:
                 self._engine.refresh_store()
             return path

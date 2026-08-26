@@ -181,12 +181,11 @@ Item {
                         Layout.fillWidth: true
                         Layout.leftMargin: 48
                         Layout.rightMargin: 12
-                        height: (updaterViewModel.downloading || updaterViewModel.applying) ? 20 : 0
+                        height: 20
                         visible: updaterViewModel.downloading || updaterViewModel.applying
                         radius: 10
                         color: AppTheme.isDark ? "#1a1d23" : "#f1f5f9"
                         clip: true
-                        Behavior on height { NumberAnimation { duration: 200 } }
                         Rectangle {
                             width: parent.width * updaterViewModel.progress
                             height: parent.height

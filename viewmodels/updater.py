@@ -276,7 +276,7 @@ class UpdaterViewModel(QObject):
 
                     mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
                     with open(dest, mode) as f:
-                        for chunk in r.iter_content(chunk_size=1 << 20):
+                        for chunk in r.iter_content(chunk_size=4 << 20):  # 4MB chunks
                             if not chunk:
                                 continue
                             f.write(chunk)
