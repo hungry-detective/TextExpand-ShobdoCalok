@@ -98,6 +98,7 @@ class UpdaterViewModel(QObject):
 
     checkingChanged     = Signal(bool)
     downloadingChanged  = Signal(bool)
+    applyingChanged     = Signal(bool)
     progressChanged     = Signal(float)
     statusMessage       = Signal(str)
     updateAvailableChanged = Signal(bool)
@@ -109,6 +110,7 @@ class UpdaterViewModel(QObject):
 
         self._checking = False
         self._downloading = False
+        self._applying = False
         self._progress = 0.0
         self._latest_version = ""
         self._update_available = False
@@ -136,6 +138,10 @@ class UpdaterViewModel(QObject):
     @Property(bool, notify=downloadingChanged)
     def downloading(self) -> bool:
         return self._downloading
+
+    @Property(bool, notify=applyingChanged)
+    def applying(self) -> bool:
+        return self._applying
 
     @Property(float, notify=progressChanged)
     def progress(self) -> float:
@@ -259,11 +265,12 @@ class UpdaterViewModel(QObject):
                 return
 
             self._emit_status("Applying update…")
+            self._set_applying(True)
             self._launch_applier(new_root, extract_to, zip_path)
-            self._emit_status("Update applied. Restarting…")
         except Exception as e:
             self._emit_status(f"Update failed: {e}")
             self._set_downloading(False)
+            self._set_applying(False)
 
     def _find_new_app_root(self, extract_to: str):
         """Find the folder that holds the new ShobdoCalok.exe inside the zip."""
@@ -337,10 +344,10 @@ del "%~f0"
         except Exception as e:
             raise RuntimeError(f"Could not start the updater: {e}")
 
-        # Give the batch script a moment to take over, then exit.
+        # Force-kill the process so the batch script can replace files.
+        # QCoreApplication.quit() only posts an event and the app may hang.
         time.sleep(0.5)
-        from PySide6.QtCore import QCoreApplication
-        QCoreApplication.quit()
+        os._exit(0)
 
     # ── Internal state helpers ─────────────────────────────────────────────────
 
@@ -351,6 +358,10 @@ del "%~f0"
     def _set_downloading(self, value: bool):
         self._downloading = value
         self.downloadingChanged.emit(value)
+
+    def _set_applying(self, value: bool):
+        self._applying = value
+        self.applyingChanged.emit(value)
 
     def _set_progress(self, value: float):
         self._progress = value

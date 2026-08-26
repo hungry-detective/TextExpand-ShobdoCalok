@@ -158,13 +158,16 @@ Item {
                         description: updaterViewModel.updateAvailable
                                    ? "Version " + updaterViewModel.latestVersion + " is available"
                                    : "Installed: v" + updaterViewModel.currentVersion
+                        descriptionColor: updaterViewModel.updateAvailable ? "#22c55e" : AppTheme.textSecondary
                         activeColor: "#22c55e"
                         checked: !!updaterViewModel && updaterViewModel.updateAvailable
                         isButton: true
-                        buttonText: updaterViewModel.downloading
-                                   ? Math.round(updaterViewModel.progress * 100) + "%"
-                                   : (updaterViewModel.updateAvailable ? "Download" : "Check")
-                        buttonEnabled: !updaterViewModel.downloading && !updaterViewModel.checking
+                        buttonText: updaterViewModel.applying
+                                   ? "Applying…"
+                                   : (updaterViewModel.downloading
+                                      ? Math.round(updaterViewModel.progress * 100) + "%"
+                                      : (updaterViewModel.updateAvailable ? "Download" : "Check"))
+                        buttonEnabled: !updaterViewModel.downloading && !updaterViewModel.checking && !updaterViewModel.applying
                         onToggled: (value) => {
                             if (!updaterViewModel) return
                             if (updaterViewModel.updateAvailable)
@@ -173,13 +176,13 @@ Item {
                                 updaterViewModel.checkForUpdate()
                         }
                     }
-                    // Download progress bar
+                    // Download / apply progress bar
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: 48
                         Layout.rightMargin: 12
-                        height: updaterViewModel.downloading ? 20 : 0
-                        visible: updaterViewModel.downloading
+                        height: (updaterViewModel.downloading || updaterViewModel.applying) ? 20 : 0
+                        visible: updaterViewModel.downloading || updaterViewModel.applying
                         radius: 10
                         color: AppTheme.isDark ? "#1a1d23" : "#f1f5f9"
                         clip: true
@@ -188,12 +191,14 @@ Item {
                             width: parent.width * updaterViewModel.progress
                             height: parent.height
                             radius: 10
-                            color: AppTheme.primary
+                            color: updaterViewModel.applying ? "#22c55e" : AppTheme.primary
                             Behavior on width { NumberAnimation { duration: 100 } }
                         }
                         Text {
                             anchors.centerIn: parent
-                            text: "Downloading... " + Math.round(updaterViewModel.progress * 100) + "%"
+                            text: updaterViewModel.applying
+                                 ? "Applying update…"
+                                 : "Downloading… " + Math.round(updaterViewModel.progress * 100) + "%"
                             font.family: "Inter"; font.pixelSize: 10; font.bold: true
                             color: "white"
                         }
@@ -274,6 +279,7 @@ Item {
         property bool isButton: false
         property string buttonText: ""
         property bool buttonEnabled: true
+        property color descriptionColor: AppTheme.textSecondary
         signal toggled(bool value)
 
         Layout.fillWidth: true; height: 60; radius: 14
@@ -318,7 +324,7 @@ Item {
             Text { 
                 text: rowRoot.description
                 font.family: "Inter"; font.pixelSize: 11
-                color: AppTheme.textSecondary
+                color: rowRoot.descriptionColor
                 elide: Text.ElideRight
                 maximumLineCount: 1
                 Layout.fillWidth: true
