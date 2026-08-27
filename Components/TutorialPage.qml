@@ -596,10 +596,10 @@ Item {
               text: "Typing " + name + "…",
               detail: "The trigger word is being typed." },
             { type: "pause", spotlight: "ex", ms: 800 },
-            { type: "action", target: "exExpand", spotlight: (currentExample === 2) ? "exMsg3" : "exExpand",
+            { type: "action", target: "exExpand", spotlight: (currentExample === 0) ? "exToField" : (currentExample === 2) ? "exMsg3" : "exExpand",
               text: "Expanded!",
               detail: expandTexts[currentExample] + (currentExample === 2 ? " and sent automatically." : "") },
-            { type: "pause", spotlight: (currentExample === 2) ? "exMsg3" : "exExpand", ms: 2500 }
+            { type: "pause", spotlight: (currentExample === 0) ? "exToField" : (currentExample === 2) ? "exMsg3" : "exExpand", ms: 2500 }
         ]
         animTimer.start()
     }
@@ -710,6 +710,7 @@ Item {
             "savedExpand": savedDemoBox,
             "ex": exInputRect,
             "exExpand": exSendBtn,
+            "exToField": exToField,
             "exMsg1": exMsg1,
             "exMsg2": exMsg2,
             "exMsg3": exMsg3,
@@ -738,7 +739,7 @@ Item {
     onDynSubStepChanged: startDynStep()
 
     onSavedChanged: if (root.saved) popSuccess(saveBtn)
-    onExExpandedChanged: if (root.exExpanded && root.currentExample !== 2) popSuccess(exSendBtn)
+    onExExpandedChanged: if (root.exExpanded && root.currentExample !== 2) popSuccess(root.currentExample === 0 ? exToField : exSendBtn)
     onDynFieldResolvedChanged: if (root.dynFieldResolved) popSuccess(dynFieldInput)
     onDynCursorPlacedChanged: if (root.dynCursorPlaced) popSuccess(dynCursorEditorRect)
     onDynDateResolvedChanged: maybeResolvedPop()
@@ -1022,8 +1023,9 @@ Item {
                                 ColumnLayout { visible: root.currentExample === 0; anchors.fill: parent; anchors.margins: 16; spacing: 10
                                     RowLayout { Layout.fillWidth: true; spacing: 8
                                         Text { text: "To:"; font.family: "Inter"; font.pixelSize: 11; font.bold: true; color: AppTheme.textSecondary }
-                                        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 30; radius: 8; color: AppTheme.hoverBg; border.color: (root.exTyped !== "" || root.exExpanded) ? AppTheme.primary : "transparent"; border.width: 1
+                                        Rectangle { id: exToField; objectName: "exToField"; Layout.fillWidth: true; Layout.preferredHeight: 30; radius: 8; color: AppTheme.hoverBg; border.color: (root.exTyped !== "" || root.exExpanded) ? AppTheme.primary : "transparent"; border.width: 1
                                             Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.exExpanded ? "test@gmail.com" : root.exTyped; font.family: "Inter"; font.pixelSize: 12; color: root.exExpanded ? successText : AppTheme.textPrimary; font.bold: root.exExpanded; Behavior on color { ColorAnimation { duration: 200 } } }
+                                            Loader { active: root.typingTarget === "ex" && root.currentExample === 0; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 10; anchors.verticalCenter: parent.verticalCenter }
                                         }
                                         Text { text: "check_circle"; font.family: "Material Symbols Outlined"; font.pixelSize: 16; color: successGreen; visible: root.exExpanded }
                                     }
@@ -1091,8 +1093,7 @@ Item {
                                     }
                                 }
                             }
-                            Rectangle {
-                                Layout.fillWidth: true; Layout.preferredHeight: 46; color: AppTheme.surface
+                            Rectangle { visible: root.currentExample !== 0; Layout.fillWidth: true; Layout.preferredHeight: 46; color: AppTheme.surface
                                 RowLayout {
                                     anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
                                     Rectangle {
