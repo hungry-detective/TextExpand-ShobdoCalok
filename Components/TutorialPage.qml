@@ -143,7 +143,7 @@ Item {
             var f = script[idx]
             if (f.type === "type") {
                 root.typingTarget = f.target
-                root.spotlight = f.target
+                root.spotlight = f.spotlight || f.target
                 if (f.text) root.instruction = f.text
                 if (f.detail) root.instructionDetail = f.detail
                 if (pos < f.textLen) {
@@ -564,10 +564,10 @@ Item {
                   text: "Typing .omw…",
                   detail: "The trigger word is being typed." },
                 { type: "pause", spotlight: "ex", ms: 800 },
-                { type: "action", target: "exExpand1", spotlight: "exMsg1",
+                { type: "action", target: "exExpand1", spotlight: "ex",
                   text: "Expanded!",
                   detail: ".omw became 'On my way!' and sent automatically." },
-                { type: "pause", spotlight: "exMsg1", ms: 2200 },
+                { type: "pause", spotlight: "ex", ms: 2200 },
                 { type: "pause", spotlight: "ex",
                   text: "Now type .hello",
                   detail: "It becomes another message.",
@@ -577,10 +577,10 @@ Item {
                   text: "Typing .hello…",
                   detail: "The trigger word is being typed." },
                 { type: "pause", spotlight: "ex", ms: 800 },
-                { type: "action", target: "exExpand2", spotlight: "exMsg2",
+                { type: "action", target: "exExpand2", spotlight: "ex",
                   text: "Expanded!",
                   detail: ".hello became 'Hello! How are you?' and sent automatically." },
-                { type: "pause", spotlight: "exMsg2", ms: 2500 }
+                { type: "pause", spotlight: "ex", ms: 2500 }
             ]
             animTimer.start()
             return
@@ -589,17 +589,17 @@ Item {
             { type: "pause",
               text: "Type " + name + " in the " + examples[currentExample].name + " input",
               detail: "Watch it expand instantly.",
-              spotlight: "ex", typing: "ex",
+              spotlight: (currentExample === 0) ? "exToField" : "ex", typing: "ex",
               ms: 2000 },
-            { type: "type", target: "ex", chars: name,
+            { type: "type", target: "ex", spotlight: (currentExample === 0) ? "exToField" : "ex", chars: name,
               textLen: name.length,
               text: "Typing " + name + "…",
               detail: "The trigger word is being typed." },
-            { type: "pause", spotlight: "ex", ms: 800 },
-            { type: "action", target: "exExpand", spotlight: (currentExample === 0) ? "exToField" : (currentExample === 2) ? "exMsg3" : "exExpand",
+            { type: "pause", spotlight: (currentExample === 0) ? "exToField" : "ex", ms: 800 },
+            { type: "action", target: "exExpand", spotlight: (currentExample === 0) ? "exToField" : "ex",
               text: "Expanded!",
               detail: expandTexts[currentExample] + (currentExample === 2 ? " and sent automatically." : "") },
-            { type: "pause", spotlight: (currentExample === 0) ? "exToField" : (currentExample === 2) ? "exMsg3" : "exExpand", ms: 2500 }
+            { type: "pause", spotlight: (currentExample === 0) ? "exToField" : "ex", ms: 2500 }
         ]
         animTimer.start()
     }
@@ -1024,8 +1024,8 @@ Item {
                                     RowLayout { Layout.fillWidth: true; spacing: 8
                                         Text { text: "To:"; font.family: "Inter"; font.pixelSize: 11; font.bold: true; color: AppTheme.textSecondary }
                                         Rectangle { id: exToField; objectName: "exToField"; Layout.fillWidth: true; Layout.preferredHeight: 30; radius: 8; color: AppTheme.hoverBg; border.color: (root.exTyped !== "" || root.exExpanded) ? AppTheme.primary : "transparent"; border.width: 1
-                                            Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.exExpanded ? "test@gmail.com" : root.exTyped; font.family: "Inter"; font.pixelSize: 12; color: root.exExpanded ? successText : AppTheme.textPrimary; font.bold: root.exExpanded; Behavior on color { ColorAnimation { duration: 200 } } }
-                                            Loader { active: root.typingTarget === "ex" && root.currentExample === 0; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 10; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { id: exToText; anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.exExpanded ? "test@gmail.com" : root.exTyped; font.family: "Inter"; font.pixelSize: 12; color: root.exExpanded ? successText : AppTheme.textPrimary; font.bold: root.exExpanded; Behavior on color { ColorAnimation { duration: 200 } } }
+                                            Loader { active: root.typingTarget === "ex" && root.currentExample === 0; sourceComponent: caretComp; anchors.left: exToText.left; anchors.leftMargin: exToText.contentWidth + 1; anchors.verticalCenter: exToText.verticalCenter }
                                         }
                                         Text { text: "check_circle"; font.family: "Material Symbols Outlined"; font.pixelSize: 16; color: successGreen; visible: root.exExpanded }
                                     }
