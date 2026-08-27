@@ -128,6 +128,9 @@ class UpdaterViewModel(QObject):
         self._asset_url = ""
         self._checksum_url = ""
         self._release_url = ""
+        self._download_lock = threading.Lock()
+        self._cached_zip_path = os.path.join(self._update_dir, "ShobdoCalok-latest.zip")
+        self._cached_checksum_path = os.path.join(self._update_dir, "ShobdoCalok-latest.sha256")
 
     # ── Properties ─────────────────────────────────────────────────────────────
 
@@ -345,14 +348,30 @@ class UpdaterViewModel(QObject):
                 self._emit_status("Could not download checksum — skipping verification.")
                 return True
 
-            # Parse the .sha256 file (format: "<hash>  <filename>" or just "<hash>")
+            # Save the checksum file locally for future caching
+            try:
+                with open(self._cached_checksum_path, "w") as f:
+                    f.write(resp.text)
+            except Exception:
+                pass
+
+            # Parse the .sha256 file
+            # Format: "<hash>" or "<hash>  <filename>" — take first token only
             text = resp.text.strip()
-            expected_hash = text.split()[0].lower()
+            if not text:
+                self._emit_status("Checksum file is empty — skipping verification.")
+                return True
+            expected_hash = text.split()[0].strip().lower()
+
+            # Validate hash format (should be 64 hex chars)
+            if len(expected_hash) != 64 or not all(c in "0123456789abcdef" for c in expected_hash):
+                self._emit_status(f"Invalid checksum format: {expected_hash[:16]}… — skipping.")
+                return True
 
             actual_hash = _sha256_file(zip_path)
 
             if actual_hash == expected_hash:
-                self._emit_status("Checksum verified ✓")
+                self._emit_status("Checksum verified")
                 return True
             else:
                 self._emit_status(
@@ -368,6 +387,9 @@ class UpdaterViewModel(QObject):
     # ── Download + install ─────────────────────────────────────────────────────
 
     def _do_download_and_install(self):
+        if not self._download_lock.acquire(blocking=False):
+            self._emit_status("An update is already in progress.")
+            return
         try:
             import requests
             if not self._is_frozen:
@@ -381,31 +403,46 @@ class UpdaterViewModel(QObject):
                 return
 
             os.makedirs(self._update_dir, exist_ok=True)
-            zip_path = os.path.join(self._update_dir, "ShobdoCalok-latest.zip")
+            zip_path = self._cached_zip_path
 
-            # ── Phase 1: Download with resume + retry ──────────────────────
-            self._set_downloading(True)
-            self._set_progress(0.0)
-            self._emit_status("Downloading update…")
+            # ── Phase 1: Check for cached ZIP ────────────────────────────
+            cached_valid = False
+            if os.path.exists(zip_path) and os.path.getsize(zip_path) > 1000:
+                cached_checksum = self._cached_checksum_path
+                if os.path.exists(cached_checksum):
+                    try:
+                        with open(cached_checksum, "r") as f:
+                            expected = f.read().strip().split()[0].lower()
+                        actual = _sha256_file(zip_path)
+                        if actual == expected:
+                            cached_valid = True
+                            self._emit_status("Using cached update (checksum OK).")
+                    except Exception:
+                        pass
 
-            if not self._download_with_resume(self._asset_url, zip_path):
-                self._set_downloading(False)
-                return
+            # ── Phase 2: Download with resume + retry ────────────────────
+            if not cached_valid:
+                self._set_downloading(True)
+                self._set_progress(0.0)
+                self._emit_status("Downloading update…")
 
-            self._set_progress(1.0)
+                if not self._download_with_resume(self._asset_url, zip_path):
+                    self._set_downloading(False)
+                    return
 
-            # ── Phase 2: Verify checksum ───────────────────────────────────
+                self._set_progress(1.0)
+            else:
+                self._set_progress(1.0)
+
+            # ── Phase 3: Verify checksum ─────────────────────────────────
             if not self._verify_checksum(zip_path):
                 self._emit_status("Update aborted due to checksum failure.")
                 self._set_downloading(False)
-                # Delete corrupted file
-                try:
-                    os.remove(zip_path)
-                except Exception:
-                    pass
                 return
 
-            # ── Phase 3: Extract with progress ─────────────────────────────
+            self._set_downloading(False)
+
+            # ── Phase 4: Extract with progress ───────────────────────────
             self._emit_status("Extracting update…")
             extract_to = os.path.join(self._update_dir, "extracted")
             if os.path.exists(extract_to):
@@ -415,16 +452,14 @@ class UpdaterViewModel(QObject):
 
             self._set_progress(0.0)
             if not self._extract_with_progress(zip_path, extract_to):
-                self._set_downloading(False)
                 return
 
             self._set_progress(1.0)
 
-            # ── Phase 4: Locate new app and apply ──────────────────────────
+            # ── Phase 5: Locate new app and apply ────────────────────────
             new_root = self._find_new_app_root(extract_to)
             if not new_root:
                 self._emit_status("Update file did not contain the app. Please re-download.")
-                self._set_downloading(False)
                 return
 
             self._emit_status("Applying update…")
@@ -435,6 +470,8 @@ class UpdaterViewModel(QObject):
             self._emit_status(f"Update failed: {e}")
             self._set_downloading(False)
             self._set_applying(False)
+        finally:
+            self._download_lock.release()
 
     def _find_new_app_root(self, extract_to: str):
         """Find the folder that holds the new ShobdoCalok.exe inside the zip."""
@@ -527,7 +564,7 @@ start "" "%APP%\\ShobdoCalok.exe"
 :cleanup
 echo Cleaning up temporary files... >> "%LOG%"
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
-if exist "%ZIPFILE%" del /q "%ZIPFILE%"
+rem Keep ZIP and checksum for future use — don't delete them
 del "%~f0" 2>nul
 """
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
@@ -571,10 +608,14 @@ del "%~f0" 2>nul
 
     @Slot()
     def checkForUpdate(self):
+        if self._checking or self._downloading or self._applying:
+            return
         threading.Thread(target=self._do_check, daemon=True).start()
 
     @Slot()
     def downloadAndInstall(self):
+        if self._checking or self._downloading or self._applying:
+            return
         threading.Thread(target=self._do_download_and_install, daemon=True).start()
 
     @Slot(result=str)

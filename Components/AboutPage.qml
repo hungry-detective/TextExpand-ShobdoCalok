@@ -226,6 +226,7 @@ Item {
                 id: updateMa
                 anchors.fill: parent
                 hoverEnabled: true
+                enabled: !updaterViewModel || (!updaterViewModel.downloading && !updaterViewModel.applying && !updaterViewModel.checking)
                 onClicked: {
                     if (!updaterViewModel) return
                     if (updaterViewModel.updateAvailable)
