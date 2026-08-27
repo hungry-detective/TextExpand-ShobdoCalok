@@ -724,7 +724,7 @@ Item {
             "dynCursorBtn": dynCursorBtn,
             "dynFieldPopup": dynFieldPopup,
             "dynFieldBtn": dynFieldBtn,
-            "dynFieldResult": dynFieldBubble,
+            "dynFieldResult": dynFieldAppRect,
             "dynExpand": dynResultBox,
             "field": dynFieldInput,
             "cursor": dynCursorEditorRect,
@@ -1395,67 +1395,28 @@ Item {
                                 }
                             }
 
-                            // Row 4: Any-other-app window (fills remaining height)
+                            // Row 4: Any-other-app window (compact)
                             Rectangle {
-                                Layout.fillWidth: true; Layout.preferredHeight: 140; radius: 14; color: AppTheme.background; border.color: AppTheme.hoverBg; border.width: 1; clip: true
-                                ColumnLayout { anchors.fill: parent; spacing: 0
-                                    Rectangle {
-                                        Layout.fillWidth: true; Layout.preferredHeight: 28; color: AppTheme.surface
-                                        RowLayout { anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
-                                            Rectangle { width: 24; height: 24; radius: 12; color: AppTheme.primary
-                                                Text { anchors.centerIn: parent; text: "smartphone"; font.family: "Material Symbols Outlined"; font.pixelSize: 13; color: "white" }
-                                            }
-                                            Text { Layout.fillWidth: true; text: "Any other app"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: AppTheme.textPrimary }
-                                            Text { text: "more_vert"; font.family: "Material Symbols Outlined"; font.pixelSize: 15; color: AppTheme.textSecondary }
-                                        }
-                                    }
-                                    Item {
-                                        Layout.fillWidth: true; Layout.fillHeight: true
-                                        Rectangle {
-                                            id: dynFieldBubble
-                                            anchors.right: parent.right; anchors.bottom: parent.bottom
-                                            anchors.rightMargin: 12; anchors.bottomMargin: 10
-                                            width: Math.min(parent.width - 24, 320)
-                                            height: root.dynFieldAppExpanded ? 50 : 0
-                                            radius: 12; color: AppTheme.primary; clip: true
-                                            opacity: root.dynFieldAppExpanded ? 1 : 0
-                                            scale: root.dynFieldAppExpanded ? 1 : 0.92
-                                            Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                                            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack } }
-                                            Behavior on height { NumberAnimation { duration: 240 } }
-                                            ColumnLayout {
-                                                anchors.fill: parent; anchors.margins: 10; spacing: 3
-                                                RowLayout { spacing: 5
-                                                    Text { text: "auto_awesome"; font.family: "Material Symbols Outlined"; font.pixelSize: 12; color: "white" }
-                                                    Text { text: "Expanded — price filled in"; font.family: "Inter"; font.pixelSize: 8; font.bold: true; color: "white" }
-                                                }
-                                                Text {
-                                                    Layout.fillWidth: true; text: root.dynFieldAppExpandedText; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: "white"; wrapMode: Text.WordWrap; verticalAlignment: Text.AlignVCenter
-                                                    Loader { active: root.typingTarget === "dynFieldAppExpand"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
-                                                }
-                                            }
-                                        }
+                                Layout.fillWidth: true; Layout.preferredHeight: 40; radius: 14; color: AppTheme.background; border.color: AppTheme.hoverBg; border.width: 1; clip: true
+                                RowLayout { anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 8
+                                    Rectangle { width: 22; height: 22; radius: 11; color: AppTheme.primary
+                                        Text { anchors.centerIn: parent; text: "smartphone"; font.family: "Material Symbols Outlined"; font.pixelSize: 12; color: "white" }
                                     }
                                     Rectangle {
                                         id: dynFieldAppRect; objectName: "dynFieldAppRect"
-                                        Layout.fillWidth: true; Layout.preferredHeight: 34; color: AppTheme.surface
-                                        RowLayout { anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
-                                            Rectangle {
-                                                Layout.fillWidth: true; Layout.preferredHeight: 28; radius: 14; color: AppTheme.hoverBg
-                                                border.color: root.dynFieldAppExpanded ? successGreen : (root.dynFieldAppText !== "" ? AppTheme.primary : "transparent"); border.width: 1
-                                                Behavior on border.color { ColorAnimation { duration: 200 } }
-                                                Loader { active: root.spotlight === "dynFieldApp"; sourceComponent: spotGlow }
-                                                Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.dynFieldAppText; font.family: "Courier New"; font.pixelSize: 12; font.bold: true; color: AppTheme.primary; visible: root.dynFieldAppText !== "" && !root.dynFieldAppExpanded
-                                                    Loader { active: root.typingTarget === "dynFieldApp"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
-                                                }
-                                                Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.dynFieldAppExpanded ? "Saved with $49 filled in" : "Type .price…"; font.family: "Inter"; font.pixelSize: 11; color: root.dynFieldAppExpanded ? successText : AppTheme.textSecondary; font.bold: true; visible: root.dynFieldAppText === "" || root.dynFieldAppExpanded }
-                                            }
-                                            Rectangle {
-                                                width: 28; height: 28; radius: 14; color: root.dynFieldAppExpanded ? successGreen : AppTheme.primary
-                                                Behavior on color { ColorAnimation { duration: 200 } }
-                                                Text { anchors.centerIn: parent; text: "send"; font.family: "Material Symbols Outlined"; font.pixelSize: 15; color: "white" }
-                                            }
+                                        Layout.fillWidth: true; Layout.preferredHeight: 28; radius: 14; color: AppTheme.hoverBg
+                                        border.color: root.dynFieldAppExpanded ? successGreen : (root.dynFieldAppText !== "" ? AppTheme.primary : "transparent"); border.width: 1
+                                        Behavior on border.color { ColorAnimation { duration: 200 } }
+                                        Loader { active: root.spotlight === "dynFieldApp"; sourceComponent: spotGlow }
+                                        Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.dynFieldAppText; font.family: "Courier New"; font.pixelSize: 12; font.bold: true; color: AppTheme.primary; visible: root.dynFieldAppText !== "" && !root.dynFieldAppExpanded
+                                            Loader { active: root.typingTarget === "dynFieldApp"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
                                         }
+                                        Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.dynFieldAppExpanded ? "Saved with $49 filled in" : "Type .price…"; font.family: "Inter"; font.pixelSize: 11; color: root.dynFieldAppExpanded ? successText : AppTheme.textSecondary; font.bold: true; visible: root.dynFieldAppText === "" || root.dynFieldAppExpanded }
+                                    }
+                                    Rectangle {
+                                        width: 28; height: 28; radius: 14; color: root.dynFieldAppExpanded ? successGreen : AppTheme.primary
+                                        Behavior on color { ColorAnimation { duration: 200 } }
+                                        Text { anchors.centerIn: parent; text: "send"; font.family: "Material Symbols Outlined"; font.pixelSize: 15; color: "white" }
                                     }
                                 }
                             }
