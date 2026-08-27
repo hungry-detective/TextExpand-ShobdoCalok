@@ -1653,6 +1653,7 @@ Item {
         // Fill-in form popup (floating overlay — at root level to avoid clip)
         Rectangle {
             id: dynFieldPopup; objectName: "dynFieldPopup"
+            visible: root.dynFieldPopupOpen
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: parent.top; anchors.topMargin: 108
             width: parent.width * 0.6
