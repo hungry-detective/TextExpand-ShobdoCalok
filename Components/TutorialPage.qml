@@ -1408,10 +1408,10 @@ Item {
                                         border.color: root.dynFieldAppExpanded ? successGreen : (root.dynFieldAppText !== "" ? AppTheme.primary : "transparent"); border.width: 1
                                         Behavior on border.color { ColorAnimation { duration: 200 } }
                                         Loader { active: root.spotlight === "dynFieldApp"; sourceComponent: spotGlow }
-                                        Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.dynFieldAppText; font.family: "Courier New"; font.pixelSize: 12; font.bold: true; color: AppTheme.primary; visible: root.dynFieldAppText !== "" && !root.dynFieldAppExpanded
+                                                Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.dynFieldAppText; font.family: "Courier New"; font.pixelSize: 12; font.bold: true; color: AppTheme.primary; visible: root.dynFieldAppText !== "" && !root.dynFieldAppExpanded && !root.dynFieldAppExpanded
                                             Loader { active: root.typingTarget === "dynFieldApp"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
                                         }
-                                        Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.dynFieldAppExpanded ? "Saved with $49 filled in" : "Type .price…"; font.family: "Inter"; font.pixelSize: 11; color: root.dynFieldAppExpanded ? successText : AppTheme.textSecondary; font.bold: true; visible: root.dynFieldAppText === "" || root.dynFieldAppExpanded }
+                                        Text { anchors.fill: parent; anchors.margins: 10; verticalAlignment: Text.AlignVCenter; text: root.dynFieldAppExpanded ? "The price of the product is $49" : "Type .price…"; font.family: "Inter"; font.pixelSize: 11; color: root.dynFieldAppExpanded ? successText : AppTheme.textSecondary; font.bold: true; visible: root.dynFieldAppText === "" || root.dynFieldAppExpanded }
                                     }
                                     Rectangle {
                                         width: 28; height: 28; radius: 14; color: root.dynFieldAppExpanded ? successGreen : AppTheme.primary
