@@ -193,8 +193,8 @@ Item {
                 else if (f.target === "openPopup") root.dynFieldPopupOpen = true
                 else if (f.target === "insertField") { root.dynFieldInserted = true; root.dynFieldEditorText += "{field:Label}" }
                 else if (f.target === "submitField") {
-                    root.dynFieldEditorText = root.dynFieldEditorText.replace("{field:Label}", root.dynFieldValue)
                     root.dynFieldPopupOpen = false; root.dynFieldResolved = true
+                    root.dynFieldAppText = "The price of the product is " + root.dynFieldValue
                 }
                 else if (f.target === "field") root.dynFieldResolved = true
                 else if (f.target === "insertCursor") { root.dynCursorInserted = true; root.dynCursorPlaced = true; root.dynCursorEditorText += "{cursor}"; root.typingTarget = "" }
