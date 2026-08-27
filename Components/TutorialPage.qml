@@ -1674,10 +1674,11 @@ Item {
                 }
                 Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.hoverBg }
                 RowLayout { spacing: 6
-                    Text { text: "Label:"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: AppTheme.textSecondary }
+                    Text { text: "The price of the product is"; font.family: "Inter"; font.pixelSize: 12; color: AppTheme.textSecondary; Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    }
                     Rectangle {
                         id: dynFieldInput; objectName: "dynFieldInput"
-                        Layout.fillWidth: true; Layout.preferredHeight: 30; radius: 8
+                        Layout.preferredWidth: 120; Layout.preferredHeight: 30; radius: 8
                         color: root.dynFieldResolved ? AppTheme.primaryLight : AppTheme.hoverBg
                         border.color: root.dynFieldResolved ? successGreen : AppTheme.primary; border.width: 1
                         Behavior on border.color { ColorAnimation { duration: 200 } }
