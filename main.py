@@ -299,13 +299,10 @@ QMenu::separator {
     quit_action.triggered.connect(app.quit)
 
     def _check_for_updates():
+        # Show the app window so the user can see the result on the About page
+        root_window.showNormal()
+        root_window.raise_()
         updater_vm.checkForUpdate()
-        tray_icon.showMessage(
-            "Shobdo Calok",
-            "Checking for updates...",
-            QSystemTrayIcon.MessageIcon.Information,
-            3000
-        )
 
     update_action.triggered.connect(_check_for_updates)
 
@@ -327,6 +324,9 @@ QMenu::separator {
             return
         lower = msg.lower()
         if "available" in lower:
+            # Bring window to front so user sees the update
+            root_window.showNormal()
+            root_window.raise_()
             tray_icon.showMessage(
                 "Shobdo Calok — Update Available",
                 msg,
@@ -340,28 +340,10 @@ QMenu::separator {
                 QSystemTrayIcon.MessageIcon.Information,
                 3000
             )
-        elif "checking" in lower:
-            tray_icon.showMessage(
-                "Shobdo Calok",
-                msg,
-                QSystemTrayIcon.MessageIcon.Information,
-                3000
-            )
-        elif "downloading" in lower:
-            tray_icon.showMessage(
-                "Shobdo Calok — Downloading",
-                msg,
-                QSystemTrayIcon.MessageIcon.Information,
-                5000
-            )
-        elif "applying" in lower or "restart" in lower:
-            tray_icon.showMessage(
-                "Shobdo Calok — Installing Update",
-                msg,
-                QSystemTrayIcon.MessageIcon.Information,
-                5000
-            )
         elif "failed" in lower or "error" in lower:
+            # Bring window to front so user sees the error
+            root_window.showNormal()
+            root_window.raise_()
             tray_icon.showMessage(
                 "Shobdo Calok — Update Error",
                 msg,
