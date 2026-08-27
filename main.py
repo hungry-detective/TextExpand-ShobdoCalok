@@ -299,7 +299,10 @@ QMenu::separator {
     quit_action.triggered.connect(app.quit)
 
     def _check_for_updates():
-        # Show the app window so the user can see the result on the About page
+        # Navigate to About page (index 2) and show the window
+        sidebar = root_window.findChild(QObject, "sidebar")
+        if sidebar:
+            sidebar.setProperty("activeIndex", 2)
         root_window.showNormal()
         root_window.raise_()
         updater_vm.checkForUpdate()

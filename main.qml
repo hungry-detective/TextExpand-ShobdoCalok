@@ -102,6 +102,7 @@ Window {
                     
                     Sidebar {
                         id: sidebar
+                        objectName: "sidebar"
                         anchors.fill: parent
                     }
                 }
