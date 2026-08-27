@@ -570,20 +570,32 @@ del "%~f0" 2>nul
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
             f.write(script.replace("\n", "\r\n"))
 
+        # Use ShellExecuteW for truly detached process launch on Windows.
+        # subprocess.Popen with close_fds + os._exit can kill the child
+        # before it even reads the batch file. ShellExecuteW starts a
+        # completely independent process.
         try:
-            creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) \
-                | getattr(subprocess, "DETACHED_PROCESS", 0) \
-                | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            subprocess.Popen(
-                ["cmd.exe", "/c", bat],
-                cwd=self._update_dir,
-                creationflags=creationflags,
-                close_fds=True,
+            import ctypes
+            import ctypes.wintypes
+            SW_SHOWNORMAL = 1
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None, "open", bat, None, self._update_dir, SW_SHOWNORMAL
             )
-        except Exception as e:
-            raise RuntimeError(f"Could not start the updater: {e}")
+            if result <= 32:
+                raise RuntimeError(f"ShellExecuteW returned {result}")
+        except Exception:
+            # Fallback: try subprocess with start /b
+            try:
+                subprocess.Popen(
+                    f'start "" "{bat}"',
+                    shell=True,
+                    cwd=self._update_dir,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception as e2:
+                raise RuntimeError(f"Could not start the updater: {e2}")
 
-        time.sleep(0.5)
+        time.sleep(1)
         os._exit(0)
 
     # ── Internal state helpers ─────────────────────────────────────────────────
