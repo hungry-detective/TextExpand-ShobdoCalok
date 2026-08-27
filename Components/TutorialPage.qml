@@ -190,7 +190,7 @@ Item {
                 else if (f.target === "time") root.dynTimeResolved = true
                 else if (f.target === "addDate") root.dynEditorText += "{date}"
                 else if (f.target === "addTime") root.dynEditorText += "{time}"
-                else if (f.target === "openPopup") root.dynFieldPopupOpen = true
+                else if (f.target === "openPopup") { if (root.dynSubStep === 1) root.dynFieldPopupOpen = true }
                 else if (f.target === "insertField") { root.dynFieldInserted = true; root.dynFieldEditorText += "{field:Label}" }
                 else if (f.target === "submitField") {
                     root.dynFieldPopupOpen = false; root.dynFieldResolved = true
