@@ -1099,8 +1099,8 @@ Item {
                                         id: exInputRect; objectName: "exInputRect"
                                         Layout.fillWidth: true; Layout.preferredHeight: 32; radius: 16; color: AppTheme.hoverBg
                                         Loader { active: root.spotlight === "ex"; sourceComponent: spotGlow }
-                                        Text { anchors.fill: parent; anchors.margins: 12; verticalAlignment: Text.AlignVCenter; text: root.exTyped; font.family: "Courier New"; font.pixelSize: 12; font.bold: true; color: AppTheme.textPrimary; visible: root.exTyped !== "" && !root.exExpanded
-                                            Loader { active: root.typingTarget === "ex"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
+                                        Text { anchors.fill: parent; anchors.margins: 12; verticalAlignment: Text.AlignVCenter; text: root.exTyped; font.family: "Courier New"; font.pixelSize: 12; font.bold: true; color: AppTheme.textPrimary; visible: root.exTyped !== "" && !root.exExpanded && root.currentExample !== 0
+                                            Loader { active: root.typingTarget === "ex" && root.currentExample !== 0; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
                                         }
                                         Text { anchors.fill: parent; anchors.margins: 12; verticalAlignment: Text.AlignVCenter; text: root.currentExample === 0 ? (root.exExpanded ? "Email filled ✓" : "Type .email…") : (root.currentExample === 1 ? (root.exExpanded2 ? "Messages sent ✓" : (root.exExpanded1 ? "Type .hello…" : "Type .omw…")) : (root.exExpanded ? "Message sent ✓" : "Type .ttyl…")); font.family: "Inter"; font.pixelSize: 11; color: (root.exExpanded || root.exExpanded2) ? successText : AppTheme.textSecondary; font.bold: true; visible: root.exTyped === "" || root.exExpanded }
                                     }
