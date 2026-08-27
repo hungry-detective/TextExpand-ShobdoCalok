@@ -239,10 +239,7 @@ Item {
             Connections {
                 target: updaterViewModel
                 function onUpdateAvailableChanged() {
-                    if (updaterViewModel.updateAvailable) {
-                        updateBtnLabel.text = "Update v" + updaterViewModel.latestVersion + " (you have " + updaterViewModel.currentVersion + ")"
-                        updateStatusLabel.text = ""
-                    } else if (!updaterViewModel.checking) {
+                    if (!updaterViewModel.updateAvailable && !updaterViewModel.checking) {
                         updateStatusLabel.text = "You're up to date"
                         updateStatusLabel.color = "#22c55e"
                         upToDateTimer.restart()

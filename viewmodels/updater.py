@@ -132,6 +132,9 @@ class UpdaterViewModel(QObject):
         self._cached_zip_path = os.path.join(self._update_dir, "ShobdoCalok-latest.zip")
         self._cached_checksum_path = os.path.join(self._update_dir, "ShobdoCalok-latest.sha256")
 
+        # If the cached ZIP matches current version, update was applied — clear stale state
+        self._clear_applied_state()
+
     # ── Properties ─────────────────────────────────────────────────────────────
 
     @Property(str, constant=True)
@@ -163,6 +166,34 @@ class UpdaterViewModel(QObject):
         return self._progress
 
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _clear_applied_state(self):
+        """If cached ZIP's version matches current, the update was applied.
+        Remove the ZIP so the next check starts fresh."""
+        try:
+            cached = os.path.join(self._update_dir, "ShobdoCalok-latest.zip")
+            if not os.path.exists(cached):
+                return
+            # Quick heuristic: if the cached ZIP is from the current version,
+            # delete it to avoid 'update available' false positives
+            # We check by looking at the ZIP's internal version.py
+            import zipfile
+            with zipfile.ZipFile(cached, "r") as zf:
+                for name in zf.namelist():
+                    if name.endswith("version.py") or name.endswith("version.pyc"):
+                        data = zf.read(name).decode("utf-8", errors="ignore")
+                        match = re.search(r'APP_VERSION\s*=\s*["\']([^"\']+)', data)
+                        if match:
+                            zip_ver = match.group(1)
+                            if _version_tuple(zip_ver) == _version_tuple(APP_VERSION):
+                                # Same version — update was applied, remove cache
+                                os.remove(cached)
+                                checksum = os.path.join(self._update_dir, "ShobdoCalok-latest.sha256")
+                                if os.path.exists(checksum):
+                                    os.remove(checksum)
+                        break
+        except Exception:
+            pass
 
     @property
     def _is_frozen(self) -> bool:
@@ -223,6 +254,28 @@ class UpdaterViewModel(QObject):
                 self._checksum_url = ""
 
             if remote > current:
+                # Double-check: if we already have this ZIP cached, the user
+                # may have already applied it manually or via a previous run
+                if os.path.exists(self._cached_zip_path):
+                    # Check if cached ZIP matches the remote version
+                    try:
+                        import zipfile as _zf
+                        with _zf.ZipFile(self._cached_zip_path, "r") as zf:
+                            for name in zf.namelist():
+                                if name.endswith("version.py") or name.endswith("version.pyc"):
+                                    data = zf.read(name).decode("utf-8", errors="ignore")
+                                    match = re.search(r'APP_VERSION\s*=\s*["\']([^"\']+)', data)
+                                    if match and _version_tuple(match.group(1)) == current:
+                                        # Cached ZIP has same version as running — already applied
+                                        os.remove(self._cached_zip_path)
+                                        if os.path.exists(self._cached_checksum_path):
+                                            os.remove(self._cached_checksum_path)
+                                        self._emit_status(f"You're up to date (version {APP_VERSION}).")
+                                        return
+                                    break
+                    except Exception:
+                        pass
+
                 self._update_available = True
                 self.updateAvailableChanged.emit(True)
                 self._emit_status(
@@ -427,7 +480,6 @@ class UpdaterViewModel(QObject):
                 self._emit_status("Downloading update…")
 
                 if not self._download_with_resume(self._asset_url, zip_path):
-                    self._set_downloading(False)
                     return
 
                 self._set_progress(1.0)
@@ -437,7 +489,6 @@ class UpdaterViewModel(QObject):
             # ── Phase 3: Verify checksum ─────────────────────────────────
             if not self._verify_checksum(zip_path):
                 self._emit_status("Update aborted due to checksum failure.")
-                self._set_downloading(False)
                 return
 
             self._set_downloading(False)
@@ -462,15 +513,16 @@ class UpdaterViewModel(QObject):
                 self._emit_status("Update file did not contain the app. Please re-download.")
                 return
 
-            self._emit_status("Applying update…")
+            self._emit_status("Applying update — restarting…")
             self._set_applying(True)
             self._launch_applier(new_root, extract_to, zip_path)
 
         except Exception as e:
             self._emit_status(f"Update failed: {e}")
+        finally:
             self._set_downloading(False)
             self._set_applying(False)
-        finally:
+            self._set_checking(False)
             self._download_lock.release()
 
     def _find_new_app_root(self, extract_to: str):
@@ -489,82 +541,45 @@ class UpdaterViewModel(QObject):
         bat = os.path.join(self._update_dir, "apply_update.bat")
         log_file = os.path.join(self._update_dir, "update_log.txt")
 
-        # Use absolute paths for everything to avoid drive letter issues
-        # All output is redirected to a log file for debugging
         script = f"""@echo off
 setlocal enabledelayedexpansion
 set "APP={app_root}"
 set "NEW={new_root}"
 set "TMPEXTRACT={extract_to}"
-set "ZIPFILE={zip_path}"
-set "OLDINTERNAL=%APP%\\_internal"
 set "LOG={log_file}"
 
 echo ===== ShobdoCalok Updater ===== > "%LOG%"
 echo Timestamp: %DATE% %TIME% >> "%LOG%"
 echo APP=%APP% >> "%LOG%"
 echo NEW=%NEW% >> "%LOG%"
-echo TMPEXTRACT=%TMPEXTRACT% >> "%LOG%"
-echo ZIPFILE=%ZIPFILE% >> "%LOG%"
 echo. >> "%LOG%"
 
-echo [1/5] Waiting for app to exit... >> "%LOG%"
-set /a COUNT=0
-:waitloop
-tasklist /FI "IMAGENAME eq ShobdoCalok.exe" 2>nul | find /I "ShobdoCalok.exe" >nul
-if not errorlevel 1 (
-    set /a COUNT+=1
-    echo Still waiting... (!COUNT!/30) >> "%LOG%"
-    if !COUNT! GEQ 30 (
-        echo WARNING: Timed out waiting, proceeding anyway >> "%LOG%"
-        goto apply
-    )
-    timeout /t 1 /nobreak >nul
-    goto waitloop
-)
-echo App exited after !COUNT! seconds >> "%LOG%"
+echo [1/4] Killing app process... >> "%LOG%"
+taskkill /F /IM ShobdoCalok.exe >> "%LOG%" 2>&1
+timeout /t 2 /nobreak >nul
 
-:apply
-echo [2/5] Waiting for file handles to release... >> "%LOG%"
-timeout /t 3 /nobreak >nul
-
-echo [3/5] Checking source exists... >> "%LOG%"
-if not exist "%NEW%" (
-    echo ERROR: Source folder does not exist: %NEW% >> "%LOG%"
+echo [2/4] Checking source... >> "%LOG%"
+if not exist "%NEW%\\ShobdoCalok.exe" (
+    echo ERROR: No ShobdoCalok.exe in source: %NEW% >> "%LOG%"
     goto cleanup
 )
 echo Source OK >> "%LOG%"
 
-echo [4/5] Deleting old _internal folder... >> "%LOG%"
-if exist "%OLDINTERNAL%" (
-    rmdir /s /q "%OLDINTERNAL%"
-    if exist "%OLDINTERNAL%" (
-        echo WARNING: Could not fully remove _internal >> "%LOG%"
-    ) else (
-        echo Old _internal removed >> "%LOG%"
-    )
-) else (
-    echo No old _internal folder found, skipping >> "%LOG%"
+echo [3/4] Mirroring new files... >> "%LOG%"
+robocopy "%NEW%" "%APP%" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP >> "%LOG%" 2>&1
+set RC=!errorlevel!
+echo robocopy finished with errorlevel !RC! >> "%LOG%"
+if !RC! GEQ 8 (
+    echo WARNING: robocopy had issues >> "%LOG%"
 )
 
-echo [5/5] Copying new files... >> "%LOG%"
-xcopy "%NEW%\\*" "%APP%\\" /e /i /y /h /q >> "%LOG%" 2>&1
-if errorlevel 1 (
-    echo xcopy failed (errorlevel !errorlevel!), trying robocopy... >> "%LOG%"
-    robocopy "%NEW%" "%APP%" /E /IS /NFL /NDL /NJH /NJS /NC /NS /NP >> "%LOG%" 2>&1
-    echo robocopy finished with errorlevel !errorlevel! >> "%LOG%"
-) else (
-    echo xcopy succeeded >> "%LOG%"
-)
-
-echo. >> "%LOG%"
-echo [DONE] Starting ShobdoCalok.exe... >> "%LOG%"
+:launch
+echo [4/4] Starting ShobdoCalok.exe... >> "%LOG%"
 start "" "%APP%\\ShobdoCalok.exe"
 
 :cleanup
-echo Cleaning up temporary files... >> "%LOG%"
+echo Cleaning up... >> "%LOG%"
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
-rem Keep ZIP and checksum for future use — don't delete them
 del "%~f0" 2>nul
 """
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
