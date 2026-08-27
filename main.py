@@ -304,7 +304,7 @@ QMenu::separator {
             "Shobdo Calok",
             "Checking for updates...",
             QSystemTrayIcon.MessageIcon.Information,
-            2000
+            3000
         )
 
     update_action.triggered.connect(_check_for_updates)
@@ -325,21 +325,43 @@ QMenu::separator {
     def _on_updater_status(msg):
         if not msg:
             return
-        if "available" in msg.lower():
+        lower = msg.lower()
+        if "available" in lower:
             tray_icon.showMessage(
                 "Shobdo Calok — Update Available",
                 msg,
                 QSystemTrayIcon.MessageIcon.Information,
                 8000
             )
-        elif "up to date" in msg.lower():
+        elif "up to date" in lower:
             tray_icon.showMessage(
                 "Shobdo Calok",
                 msg,
                 QSystemTrayIcon.MessageIcon.Information,
                 3000
             )
-        elif "failed" in msg.lower() or "error" in msg.lower():
+        elif "checking" in lower:
+            tray_icon.showMessage(
+                "Shobdo Calok",
+                msg,
+                QSystemTrayIcon.MessageIcon.Information,
+                3000
+            )
+        elif "downloading" in lower:
+            tray_icon.showMessage(
+                "Shobdo Calok — Downloading",
+                msg,
+                QSystemTrayIcon.MessageIcon.Information,
+                5000
+            )
+        elif "applying" in lower or "restart" in lower:
+            tray_icon.showMessage(
+                "Shobdo Calok — Installing Update",
+                msg,
+                QSystemTrayIcon.MessageIcon.Information,
+                5000
+            )
+        elif "failed" in lower or "error" in lower:
             tray_icon.showMessage(
                 "Shobdo Calok — Update Error",
                 msg,

@@ -75,6 +75,7 @@ Item {
     property bool cursorVisible: false
 
     onSpotlightChanged: {
+        if (clickAnim.running) clickAnim.stop()
         clickRipple.opacity = 0
         if (clickDelayTimer.running) clickDelayTimer.stop()
         if (spotlight === "") { cursorVisible = false; return }
@@ -225,6 +226,7 @@ Item {
 
     function resetDemo() {
         animTimer.stop()
+        advanceTimer.stop()
         abbrevText = ""; contentText = ""
         folderSelected = false; saved = false
         savedDemoText = ""; savedDemoExpanded = false
@@ -1228,7 +1230,7 @@ Item {
                                 id: watchBtn; objectName: "watchBtn"
                                 width: 130; height: 32; radius: 8
                                 color: (root.dynDateResolved && root.dynTimeResolved) ? successGreen : AppTheme.primaryHover
-                                Behavior on color { NumberAnimation { duration: 200 } }
+                                Behavior on color { ColorAnimation { duration: 200 } }
                                 Text { anchors.centerIn: parent; text: (root.dynDateResolved && root.dynTimeResolved) ? "DONE!" : "TRY DATE & TIME"; font.family: "Inter"; font.pixelSize: 9; font.bold: true; color: "white" }
                             }
                         }
@@ -1241,7 +1243,7 @@ Item {
                             ColumnLayout { anchors.fill: parent; anchors.margins: 16; spacing: 12
                                 RowLayout {
                                     Layout.fillWidth: true; spacing: 6
-                                    Text { Layout.fillWidth: true; text: root.dynEditorText === "" ? "Type your message here…" : root.dynEditorText; font.family: "Inter"; font.pixelSize: 14; color: root.dynEditorText === "" ? AppTheme.textSecondary : (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary); wrapMode: Text.WordWrap
+                                    Text { Layout.fillWidth: true; text: root.dynEditorText === "" ? "Type your message here…" : root.dynEditorText; font.family: "Inter"; font.pixelSize: 14; color: root.dynEditorText === "" ? AppTheme.textSecondary : AppTheme.textPrimary; wrapMode: Text.WordWrap
                                         Loader { active: root.typingTarget === "dynEditor"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 2; anchors.verticalCenter: parent.verticalCenter }
                                     }
                                 }
@@ -1253,7 +1255,7 @@ Item {
                         Rectangle {
                             id: dynResultBox; objectName: "dynResultBox"
                             Layout.fillWidth: true; Layout.preferredHeight: 80; radius: 12; color: AppTheme.surface; clip: true
-                            border.color: (root.dynDateResolved || root.dynTimeResolved) ? successGreen : "transparent"; border.width: 1
+                            border.color: (root.dynDateResolved && root.dynTimeResolved) ? successGreen : "transparent"; border.width: 1
                             Behavior on border.color { ColorAnimation { duration: 300 } }
                             Loader { active: root.spotlight === "dynExpand"; sourceComponent: spotGlow }
                             ColumnLayout {
@@ -1264,15 +1266,15 @@ Item {
                                 }
                                 Rectangle {
                                     Layout.fillWidth: true; Layout.preferredHeight: 38; radius: 9; color: AppTheme.hoverBg
-                                    border.color: (root.dynDateResolved || root.dynTimeResolved) ? successGreen : "transparent"; border.width: 1
-                                    Behavior on border.color { NumberAnimation { duration: 200 } }
+                                    border.color: (root.dynDateResolved && root.dynTimeResolved) ? successGreen : "transparent"; border.width: 1
+                                    Behavior on border.color { ColorAnimation { duration: 300 } }
                                     RowLayout {
                                         anchors.fill: parent; anchors.margins: 10; spacing: 6
                                         Text { text: "keyboard"; font.family: "Material Symbols Outlined"; font.pixelSize: 15; color: AppTheme.textSecondary }
-                                        Text { Layout.fillWidth: true; text: root.dynResultExpanded ? root.dynResult : root.dynResultTyped; font.family: "Inter"; font.pixelSize: 12; color: (root.dynDateResolved || root.dynTimeResolved) ? successText : (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary); font.bold: root.dynDateResolved || root.dynTimeResolved || root.dynResultExpanded; Behavior on color { NumberAnimation { duration: 200 } }
+                                        Text { Layout.fillWidth: true; text: root.dynResultExpanded ? root.dynResult : root.dynResultTyped; font.family: "Inter"; font.pixelSize: 12; color: (root.dynDateResolved && root.dynTimeResolved) ? successText : AppTheme.textPrimary; font.bold: root.dynDateResolved && root.dynTimeResolved || root.dynResultExpanded; Behavior on color { ColorAnimation { duration: 300 } }
                                             Loader { active: root.typingTarget === "dynExpand"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
                                         }
-                                        Text { text: "send"; font.family: "Material Symbols Outlined"; font.pixelSize: 15; color: (root.dynDateResolved || root.dynTimeResolved) ? successGreen : AppTheme.primary }
+                                        Text { text: "send"; font.family: "Material Symbols Outlined"; font.pixelSize: 15; color: (root.dynDateResolved && root.dynTimeResolved) ? successGreen : AppTheme.primary }
                                     }
                                 }
                             }
@@ -1386,7 +1388,7 @@ Item {
                                     Text { text: "description"; font.family: "Material Symbols Outlined"; font.pixelSize: 14; color: AppTheme.primary }
                                     ColumnLayout { Layout.fillWidth: true; spacing: 2
                                         Text { text: "Your snippet"; font.family: "Inter"; font.pixelSize: 8; font.bold: true; font.letterSpacing: 1; color: AppTheme.textSecondary }
-                                        Text { Layout.fillWidth: true; text: root.dynFieldEditorText === "" ? "Type the expansion message here…" : root.dynFieldEditorText; font.family: "Inter"; font.pixelSize: 12; color: root.dynFieldResolved ? successText : (root.dynFieldEditorText === "" ? AppTheme.textSecondary : (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary)); font.bold: root.dynFieldResolved; wrapMode: Text.WordWrap; elide: Text.ElideRight
+                                        Text { Layout.fillWidth: true; text: root.dynFieldEditorText === "" ? "Type the expansion message here…" : root.dynFieldEditorText; font.family: "Inter"; font.pixelSize: 12; color: root.dynFieldResolved ? successText : (root.dynFieldEditorText === "" ? AppTheme.textSecondary : AppTheme.textPrimary); font.bold: root.dynFieldResolved; wrapMode: Text.WordWrap; elide: Text.ElideRight
                                             Loader { active: root.typingTarget === "dynFieldEditor"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 2; anchors.verticalCenter: parent.verticalCenter }
                                         }
                                     }
@@ -1603,7 +1605,7 @@ Item {
                                 Rectangle {
                                     Layout.preferredWidth: 132; Layout.preferredHeight: 26; radius: 8
                                     color: root.dynCursorPlaced ? successGreen : AppTheme.primaryHover
-                                    Behavior on color { NumberAnimation { duration: 200 } }
+                                    Behavior on color { ColorAnimation { duration: 200 } }
                                     Text { anchors.centerIn: parent; text: root.dynCursorPlaced ? "DONE!" : "TRY CURSOR"; font.family: "Inter"; font.pixelSize: 9; font.bold: true; color: "white" }
                                 }
                             }
@@ -1633,7 +1635,7 @@ Item {
                                                     }
                                                     return t
                                                 }
-                                                font.family: "Inter"; font.pixelSize: 12; color: root.dynCursorEditorText === "" ? AppTheme.textSecondary : (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary); wrapMode: Text.WordWrap; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
+                                                font.family: "Inter"; font.pixelSize: 12; color: root.dynCursorEditorText === "" ? AppTheme.textSecondary : AppTheme.textPrimary; wrapMode: Text.WordWrap; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
                                                 Loader { active: root.typingTarget === "dynCursorEditor"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 2; anchors.verticalCenter: parent.verticalCenter }
                                             }
                                             Rectangle {
