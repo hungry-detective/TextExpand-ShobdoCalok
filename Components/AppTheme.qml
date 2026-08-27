@@ -28,6 +28,7 @@ QtObject {
     // Brand/Accent (Projectline Purple)
     property color primary: "#7c3aed" // Violet 600
     property color primaryHover: "#8b5cf6" // Violet 500
+    property color primaryDark: "#6d28d9" // Violet 700
     property color primaryLight: isDark ? "#2d1b4e" : "#ede9fe"
 
     // States

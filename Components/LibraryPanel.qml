@@ -347,11 +347,13 @@ Item {
             Text { text: promptPopup.titleText; font.family: "Inter"; font.pixelSize: 15; font.bold: true; color: AppTheme.textPrimary }
             Rectangle {
                 Layout.fillWidth: true; height: 36; radius: 10
+                color: AppTheme.isDark ? "#1a1d23" : "#ffffff"
                 border.color: nameInput.activeFocus ? AppTheme.primary : AppTheme.hoverBg; border.width: 1
                 TextInput {
                     id: nameInput; anchors.fill: parent; anchors.margins: 10
                     font.family: "Inter"; font.pixelSize: 12; color: AppTheme.textPrimary
                     verticalAlignment: TextInput.AlignVCenter
+                    selectionColor: AppTheme.primary
                     Keys.onReturnPressed: promptPopup.doConfirm()
                     Keys.onEscapePressed: promptPopup.close()
                 }
@@ -508,6 +510,7 @@ Item {
             TextInput {
                 id: searchInput; Layout.fillWidth: true; font.family: "Inter"; font.pixelSize: 11
                 color: AppTheme.textPrimary; verticalAlignment: Qt.AlignVCenter; clip: true
+                selectionColor: AppTheme.primary
                 onTextChanged: libraryRoot.searchText = text.toLowerCase()
                 Text {
                     text: "Search snippets…"; font: parent.font; color: AppTheme.textSecondary

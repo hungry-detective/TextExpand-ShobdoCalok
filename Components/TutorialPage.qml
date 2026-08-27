@@ -1241,7 +1241,7 @@ Item {
                             ColumnLayout { anchors.fill: parent; anchors.margins: 16; spacing: 12
                                 RowLayout {
                                     Layout.fillWidth: true; spacing: 6
-                                    Text { Layout.fillWidth: true; text: root.dynEditorText === "" ? "Type your message here…" : root.dynEditorText; font.family: "Inter"; font.pixelSize: 14; color: (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary); wrapMode: Text.WordWrap
+                                    Text { Layout.fillWidth: true; text: root.dynEditorText === "" ? "Type your message here…" : root.dynEditorText; font.family: "Inter"; font.pixelSize: 14; color: root.dynEditorText === "" ? AppTheme.textSecondary : (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary); wrapMode: Text.WordWrap
                                         Loader { active: root.typingTarget === "dynEditor"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 2; anchors.verticalCenter: parent.verticalCenter }
                                     }
                                 }
@@ -1386,7 +1386,7 @@ Item {
                                     Text { text: "description"; font.family: "Material Symbols Outlined"; font.pixelSize: 14; color: AppTheme.primary }
                                     ColumnLayout { Layout.fillWidth: true; spacing: 2
                                         Text { text: "Your snippet"; font.family: "Inter"; font.pixelSize: 8; font.bold: true; font.letterSpacing: 1; color: AppTheme.textSecondary }
-                                        Text { Layout.fillWidth: true; text: root.dynFieldEditorText === "" ? "Type the expansion message here…" : root.dynFieldEditorText; font.family: "Inter"; font.pixelSize: 12; color: root.dynFieldResolved ? successText : (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary); font.bold: root.dynFieldResolved; wrapMode: Text.WordWrap; elide: Text.ElideRight
+                                        Text { Layout.fillWidth: true; text: root.dynFieldEditorText === "" ? "Type the expansion message here…" : root.dynFieldEditorText; font.family: "Inter"; font.pixelSize: 12; color: root.dynFieldResolved ? successText : (root.dynFieldEditorText === "" ? AppTheme.textSecondary : (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary)); font.bold: root.dynFieldResolved; wrapMode: Text.WordWrap; elide: Text.ElideRight
                                             Loader { active: root.typingTarget === "dynFieldEditor"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 2; anchors.verticalCenter: parent.verticalCenter }
                                         }
                                     }
@@ -1633,7 +1633,7 @@ Item {
                                                     }
                                                     return t
                                                 }
-                                                font.family: "Inter"; font.pixelSize: 12; color: AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary; wrapMode: Text.WordWrap; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
+                                                font.family: "Inter"; font.pixelSize: 12; color: root.dynCursorEditorText === "" ? AppTheme.textSecondary : (AppTheme.isDark ? "#ffffff" : AppTheme.textPrimary); wrapMode: Text.WordWrap; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter
                                                 Loader { active: root.typingTarget === "dynCursorEditor"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 2; anchors.verticalCenter: parent.verticalCenter }
                                             }
                                             Rectangle {

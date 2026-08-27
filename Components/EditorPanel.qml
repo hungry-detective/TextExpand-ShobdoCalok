@@ -115,15 +115,18 @@ Rectangle {
     }
 
     // ── Folder picker popup ────────────────────────────────────────────────
-    Rectangle {
+    Popup {
         id: folderDropdown
-        visible: false; z: 99
-        x: { var p = folderPickerBtn.mapToItem(root, 0, folderPickerBtn.height + 4); return p.x }
-        y: { var p = folderPickerBtn.mapToItem(root, 0, folderPickerBtn.height + 4); return p.y }
+        z: 99
         width: 180; height: Math.min(root.folderNames.length * 36 + 8, 200)
-        radius: 10; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1; clip: true
+        closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnEscape
+        background: Rectangle { radius: 10; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
 
-        ListView {
+        // Position below the folder picker button
+        x: folderPickerBtn.mapToItem(root, 0, folderPickerBtn.height + 4).x
+        y: folderPickerBtn.mapToItem(root, 0, folderPickerBtn.height + 4).y
+
+        contentItem: ListView {
             anchors.fill: parent; anchors.margins: 4; model: root.folderNames; spacing: 2; clip: true
             delegate: Rectangle {
                 width: parent.width; height: 36; radius: 8
@@ -132,7 +135,7 @@ Rectangle {
                 TapHandler {
                     onTapped: {
                         root.pendingFolder = modelData
-                        folderDropdown.visible = false
+                        folderDropdown.close()
                     }
                 }
                 RowLayout {
@@ -158,7 +161,7 @@ Rectangle {
                 Layout.preferredWidth: 160; Layout.preferredHeight: 34; radius: 10
                 color: folderBtnHover.hovered ? AppTheme.hoverBg : AppTheme.surface
                 HoverHandler { id: folderBtnHover }
-                TapHandler { onTapped: { if (root.currentAbbrev !== "") folderDropdown.visible = !folderDropdown.visible } }
+                TapHandler { onTapped: { if (root.currentAbbrev !== "") { folderDropdown.visible ? folderDropdown.close() : folderDropdown.open() } } }
                 RowLayout {
                     anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
                     Text { text: "folder"; font.family: "Material Symbols Outlined"; font.pixelSize: 14; color: root.pendingFolder !== "" ? AppTheme.primary : AppTheme.textSecondary }
@@ -181,6 +184,7 @@ Rectangle {
                     TextInput {
                         id: abbrevInput; Layout.fillWidth: true
                         verticalAlignment: Qt.AlignVCenter; color: AppTheme.primary; font.family: "Courier New"; font.pixelSize: 12; font.bold: true
+                        selectionColor: AppTheme.primary; selectedTextColor: "white"
                         Text { anchors.verticalCenter: parent.verticalCenter; text: "trigger word"; font: parent.font; color: AppTheme.textSecondary; visible: parent.text === "" && !parent.activeFocus }
                     }
                 }
@@ -234,7 +238,7 @@ Rectangle {
             ScrollView {
                 id: scrollView; anchors.fill: parent; anchors.margins: 4; clip: true
                 ScrollBar.vertical: ModernScrollBar { parent: scrollView; anchors.right: scrollView.right; anchors.rightMargin: 4 }
-                TextArea { id: mainTextArea; color: AppTheme.textPrimary; font.family: "Inter"; font.pixelSize: 13; wrapMode: TextArea.Wrap; leftPadding: 16; rightPadding: 24; topPadding: 16; bottomPadding: 16; background: null; selectByMouse: true; selectionColor: AppTheme.primary; placeholderText: "Select a snippet from the library to edit it…" }
+                TextArea { id: mainTextArea; color: AppTheme.textPrimary; font.family: "Inter"; font.pixelSize: 13; wrapMode: TextArea.Wrap; leftPadding: 16; rightPadding: 24; topPadding: 16; bottomPadding: 16; background: null; selectByMouse: true; selectionColor: AppTheme.primary; placeholderText: "Select a snippet from the library to edit it…"; placeholderTextColor: AppTheme.textSecondary }
             }
         }
 
@@ -264,6 +268,7 @@ Rectangle {
                             text: root.currentAbbrev === "" ? "" : (snippetViewModel ? snippetViewModel.previewExpansion(mainTextArea.text) : "")
                             font.family: "Inter"; font.pixelSize: 12; color: AppTheme.textPrimary
                             wrapMode: TextArea.Wrap; background: null; padding: 8
+                            selectionColor: AppTheme.primary
                         }
                     }
                 }

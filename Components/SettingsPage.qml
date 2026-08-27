@@ -199,7 +199,7 @@ Item {
                                  ? "Applying update…"
                                  : "Downloading… " + Math.round(updaterViewModel.progress * 100) + "%"
                             font.family: "Inter"; font.pixelSize: 10; font.bold: true
-                            color: "white"
+                            color: AppTheme.textPrimary
                         }
                     }
                 }
