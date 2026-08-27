@@ -1248,8 +1248,6 @@ Item {
                                         Loader { active: root.typingTarget === "dynEditor"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 2; anchors.verticalCenter: parent.verticalCenter }
                                     }
                                 }
-                                Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.hoverBg }
-                                Text { Layout.fillWidth: true; text: root.dynDateResolved && root.dynTimeResolved ? "Both words turned green — they now fill with live values automatically." : "Type normally, then click DATE and TIME to add auto-fill words."; font.family: "Inter"; font.pixelSize: 10; color: AppTheme.textPrimary; wrapMode: Text.WordWrap }
                             }
                         }
 
