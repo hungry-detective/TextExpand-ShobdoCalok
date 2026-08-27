@@ -312,7 +312,7 @@ class GoogleDriveViewModel(QObject):
 
             self.accountNameChanged.emit(self._account_name)
             self.loginStateChanged.emit(True)
-            self.statusMessage.emit(f"Signed in as {self._account_name}")
+            self._sync_backup_status()
         except FileNotFoundError as e:
             self.statusMessage.emit(str(e))
         except Exception as e:
@@ -340,7 +340,31 @@ class GoogleDriveViewModel(QObject):
         if resp.status_code != 200:
             raise RuntimeError(f"Drive search failed: {resp.status_code}")
         files = resp.json().get("files", [])
-        return files[0]["id"] if files else None
+        return files[0] if files else None
+
+    def _sync_backup_status(self):
+        """Query Drive for backup existence and update UI. Called after login."""
+        try:
+            if not self._creds:
+                return
+            token = self._access_token()
+            file_info = self._find_backup_file(token)
+            if file_info:
+                mt = file_info.get("modifiedTime", "")
+                if mt:
+                    from datetime import datetime
+                    try:
+                        dt = datetime.fromisoformat(mt.replace("Z", "+00:00"))
+                        stamp = dt.strftime("%b %d, %Y %I:%M %p")
+                    except Exception:
+                        stamp = mt[:10]
+                else:
+                    stamp = "Yes (unknown date)"
+                self._set_last_backup(stamp)
+            else:
+                self._set_last_backup("")
+        except Exception:
+            pass
 
     def _upload(self, token: str, file_id: str, content: str):
         import requests
@@ -405,8 +429,8 @@ class GoogleDriveViewModel(QObject):
                 self._snippet_store.export_data(),
                 indent=2, ensure_ascii=False,
             )
-            file_id = self._find_backup_file(token)
-            self._upload(token, file_id, content)
+            file_info = self._find_backup_file(token)
+            self._upload(token, file_info["id"] if file_info else None, content)
             stamp = time.strftime("%b %d, %Y %I:%M %p")
             self._set_last_backup(stamp)
             self.statusMessage.emit("Backup uploaded to Google Drive")
@@ -423,13 +447,23 @@ class GoogleDriveViewModel(QObject):
             if self._snippet_store is None:
                 raise RuntimeError("Snippet store not wired")
             token = self._access_token()
-            file_id = self._find_backup_file(token)
-            if not file_id:
+            file_info = self._find_backup_file(token)
+            if not file_info:
                 raise RuntimeError("No backup found on Google Drive")
-            content = self._download(token, file_id)
+            content = self._download(token, file_info["id"])
             data = json.loads(content)
             if not self._snippet_store.import_data(data):
                 raise RuntimeError("Backup file is invalid")
+            # Update lastBackup from Drive's modifiedTime
+            mt = file_info.get("modifiedTime", "")
+            if mt:
+                from datetime import datetime
+                try:
+                    dt = datetime.fromisoformat(mt.replace("Z", "+00:00"))
+                    stamp = dt.strftime("%b %d, %Y %I:%M %p")
+                except Exception:
+                    stamp = mt[:10]
+                self._set_last_backup(stamp)
             self.restoreComplete.emit()
             self.statusMessage.emit("Snippets restored from Google Drive")
         except Exception as e:
@@ -462,10 +496,14 @@ class GoogleDriveViewModel(QObject):
 
     @Slot()
     def login(self):
+        if self._busy:
+            return
         threading.Thread(target=self._start_login, daemon=True).start()
 
     @Slot()
     def logout(self):
+        if self._busy:
+            return
         self._do_logout()
 
     @Slot()

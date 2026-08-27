@@ -29,12 +29,27 @@ Item {
         var names = snippetViewModel.folders
         if (!names || names.length === undefined) return
 
-        folderListModel.clear()
-        var newModels = {}
+        // Preserve expand state before clearing
+        var expandState = {}
+        for (var k = 0; k < folderListModel.count; k++) {
+            var row = folderListModel.get(k)
+            expandState[row.folderName] = row.isExpanded
+        }
 
+        folderListModel.clear()
+
+        // Destroy old snippet models to prevent memory leak
+        for (var oldKey in snippetModels) {
+            if (snippetModels[oldKey]) {
+                snippetModels[oldKey].destroy()
+            }
+        }
+
+        var newModels = {}
         for (var i = 0; i < names.length; i++) {
             var fname = names[i]
-            folderListModel.append({ "folderName": fname, "isExpanded": false })
+            var wasExpanded = expandState[fname] === true
+            folderListModel.append({ "folderName": fname, "isExpanded": wasExpanded })
 
             var snData = snippetViewModel.snippetsForFolder(fname)
             var m = Qt.createQmlObject('import QtQuick; ListModel {}', libraryRoot)
@@ -154,19 +169,23 @@ Item {
         }
     }
 
-    // Single toggle for expand/collapse all
-    property bool allExpanded: {
-        if (folderListModel.count === 0) return false
+    // Count of expanded folders for toggle button state
+    property int expandedCount: 0
+    property bool allExpanded: folderListModel.count > 0 && expandedCount === folderListModel.count
+
+    function updateExpandedCount() {
+        var count = 0
         for (var i = 0; i < folderListModel.count; i++) {
-            if (!folderListModel.get(i).isExpanded) return false
+            if (folderListModel.get(i).isExpanded) count++
         }
-        return true
+        expandedCount = count
     }
 
     function toggleAll() {
         var target = !allExpanded
         for (var i = 0; i < folderListModel.count; i++)
             folderListModel.setProperty(i, "isExpanded", target)
+        updateExpandedCount()
     }
 
     Component.onCompleted: rebuildAll()
@@ -650,6 +669,7 @@ Item {
                         } else {
                             model.isExpanded = !fExpanded;
                             libraryRoot.selectedFolder = fName
+                            libraryRoot.updateExpandedCount()
                         }
                     }
                     onCanceled: {

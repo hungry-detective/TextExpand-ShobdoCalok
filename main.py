@@ -1,6 +1,7 @@
 import sys
 import os
 import platform
+import threading
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QFontDatabase, QIcon, QAction
 from PySide6.QtQml import QQmlApplicationEngine
@@ -207,7 +208,7 @@ if __name__ == "__main__":
         # Restart keyboard hook after Windows sleep/resume
         def _on_system_resume():
             print("[Main] System resumed — restarting expansion engine")
-            expansion_engine.restart()
+            threading.Thread(target=expansion_engine.restart, daemon=True).start()
 
         event_filter.on_resume_callback = _on_system_resume
 
@@ -372,7 +373,7 @@ QMenu::separator {
     def _health_check():
         if expansion_engine.is_enabled and not expansion_engine.is_alive():
             print("[Main] Keyboard hook is dead — auto-restarting")
-            expansion_engine.restart()
+            threading.Thread(target=expansion_engine.restart, daemon=True).start()
 
         # Switch from fast to slow phase after 30 seconds
         elapsed = _time.time() - _health_start_time

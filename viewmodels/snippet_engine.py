@@ -72,6 +72,16 @@ class SnippetStore:
         """Replace the whole library with *data*. Returns False if invalid."""
         if not isinstance(data, dict) or not isinstance(data.get("folders"), list):
             return False
+        for folder in data["folders"]:
+            if not isinstance(folder, dict) or not isinstance(folder.get("name"), str):
+                return False
+            if not isinstance(folder.get("snippets"), list):
+                return False
+            for sn in folder["snippets"]:
+                if not isinstance(sn, dict):
+                    return False
+                if not isinstance(sn.get("abbreviation"), str) or not isinstance(sn.get("content"), str):
+                    return False
         self._data = data
         self._abbrev_cache = None
         self.save()
@@ -152,6 +162,10 @@ class SnippetStore:
                        new_abbreviation: str, new_content: str) -> bool:
         for f in self._data["folders"]:
             if f["name"] == folder_name:
+                # Check for duplicate if abbreviation is changing
+                if new_abbreviation != abbreviation:
+                    if any(s["abbreviation"] == new_abbreviation for s in f["snippets"]):
+                        return False
                 for sn in f["snippets"]:
                     if sn["abbreviation"] == abbreviation:
                         sn["abbreviation"] = new_abbreviation

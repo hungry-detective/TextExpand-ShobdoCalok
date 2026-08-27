@@ -290,7 +290,7 @@ class SnippetViewModel(QObject):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(self._store.export_data(), f, indent=2, ensure_ascii=False)
-            return path
+            return "Export complete!"
         except Exception as e:
             return f"Error: {e}"
 
@@ -305,13 +305,12 @@ class SnippetViewModel(QObject):
                 data = json.load(f)
             if not self._store.import_data(data):
                 return "Invalid file: missing 'folders'."
-            # Emit signals to refresh UI
             self.foldersChanged.emit()
             for name in self._store.folder_names():
                 self.snippetsChanged.emit(name)
             if self._engine:
                 self._engine.refresh_store()
-            return path
+            return "Import complete!"
         except Exception as e:
             return f"Error: {e}"
 
@@ -345,8 +344,9 @@ class SnippetViewModel(QObject):
     def setStartup(self, enabled: bool):
         if sys.platform != "win32":
             return
+        import winreg
+        key = None
         try:
-            import winreg
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                 r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
                 winreg.KEY_SET_VALUE)
@@ -360,11 +360,16 @@ class SnippetViewModel(QObject):
                     winreg.DeleteValue(key, self._APP_NAME)
                 except FileNotFoundError:
                     pass
-            winreg.CloseKey(key)
             self._startup_enabled = enabled
             self.startupEnabledChanged.emit(enabled)
         except Exception as e:
             print(f"Startup toggle error: {e}")
+        finally:
+            if key:
+                try:
+                    winreg.CloseKey(key)
+                except Exception:
+                    pass
 
     # ── Store accessor (for engine) ────────────────────────────────────────────
 
