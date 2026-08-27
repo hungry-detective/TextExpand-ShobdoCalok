@@ -1411,7 +1411,6 @@ Item {
                                     }
                                     Item {
                                         Layout.fillWidth: true; Layout.fillHeight: true
-                                        Text { anchors.centerIn: parent; text: "Type .price here and your snippet fills in"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary; visible: !root.dynFieldAppExpanded }
                                         Rectangle {
                                             id: dynFieldBubble
                                             anchors.right: parent.right; anchors.bottom: parent.bottom
@@ -1461,56 +1460,6 @@ Item {
                                 }
                             }
                         }
-                        }
-
-                        // Fill-in form popup (floating overlay)
-                        Rectangle {
-                            id: dynFieldPopup; objectName: "dynFieldPopup"
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.top: parent.top; anchors.topMargin: root.dynSubStep === 1 ? 290 : 108
-                            width: parent.width * 0.6
-                            height: root.dynFieldPopupOpen ? 128 : 0
-                            z: 5
-                            radius: 14; color: AppTheme.surface; clip: true
-                            border.color: AppTheme.primary; border.width: 1
-                            opacity: root.dynFieldPopupOpen ? 1 : 0
-                            Behavior on height { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                            Behavior on opacity { NumberAnimation { duration: 250 } }
-                            Loader { active: root.spotlight === "dynFieldPopup"; sourceComponent: spotGlow }
-                            ColumnLayout {
-                                anchors.fill: parent; anchors.margins: 10; spacing: 6
-                                RowLayout { spacing: 6
-                                    Rectangle { width: 8; height: 8; radius: 4; color: AppTheme.primary }
-                                    Text { text: "Fill in the field"; font.family: "Inter"; font.pixelSize: 11; font.bold: true; color: AppTheme.textPrimary }
-                                    Item { Layout.fillWidth: true }
-                                    Text { text: "close"; font.family: "Material Symbols Outlined"; font.pixelSize: 14; color: AppTheme.textSecondary }
-                                }
-                                Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.hoverBg }
-                                RowLayout { spacing: 6
-                                    Text { text: "Label:"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: AppTheme.textSecondary }
-                                    Rectangle {
-                                        id: dynFieldInput; objectName: "dynFieldInput"
-                                        Layout.fillWidth: true; Layout.preferredHeight: 30; radius: 8
-                                        color: root.dynFieldResolved ? AppTheme.primaryLight : AppTheme.hoverBg
-                                        border.color: root.dynFieldResolved ? successGreen : AppTheme.primary; border.width: 1
-                                        Behavior on border.color { ColorAnimation { duration: 200 } }
-                                        Loader { active: root.spotlight === "field"; sourceComponent: spotGlow }
-                                        RowLayout {
-                                            anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; spacing: 4
-                                            Text { text: root.dynFieldValue; font.family: "Inter"; font.pixelSize: 13; color: AppTheme.textPrimary; font.bold: true; verticalAlignment: Text.AlignVCenter
-                                                Loader { active: root.typingTarget === "dynField"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
-                                            }
-                                            Item { Layout.fillWidth: true }
-                                            Text { text: "check_circle"; font.family: "Material Symbols Outlined"; font.pixelSize: 14; color: successGreen; visible: root.dynFieldResolved }
-                                        }
-                                    }
-                                }
-                                Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.hoverBg }
-                                Rectangle {
-                                    Layout.fillWidth: true; Layout.preferredHeight: 28; radius: 8; color: AppTheme.primary
-                                    Text { anchors.centerIn: parent; text: "Submit"; font.family: "Inter"; font.pixelSize: 11; font.bold: true; color: "white" }
-                                }
-                            }
                         }
                     }
 
@@ -1736,6 +1685,56 @@ Item {
                         }
                     }
 
+                }
+            }
+        }
+
+        // Fill-in form popup (floating overlay — at root level to avoid clip)
+        Rectangle {
+            id: dynFieldPopup; objectName: "dynFieldPopup"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top; anchors.topMargin: 108
+            width: parent.width * 0.6
+            height: root.dynFieldPopupOpen ? 128 : 0
+            z: 5
+            radius: 14; color: AppTheme.surface; clip: true
+            border.color: AppTheme.primary; border.width: 1
+            opacity: root.dynFieldPopupOpen ? 1 : 0
+            Behavior on height { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 250 } }
+            Loader { active: root.spotlight === "dynFieldPopup"; sourceComponent: spotGlow }
+            ColumnLayout {
+                anchors.fill: parent; anchors.margins: 10; spacing: 6
+                RowLayout { spacing: 6
+                    Rectangle { width: 8; height: 8; radius: 4; color: AppTheme.primary }
+                    Text { text: "Fill in the field"; font.family: "Inter"; font.pixelSize: 11; font.bold: true; color: AppTheme.textPrimary }
+                    Item { Layout.fillWidth: true }
+                    Text { text: "close"; font.family: "Material Symbols Outlined"; font.pixelSize: 14; color: AppTheme.textSecondary }
+                }
+                Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.hoverBg }
+                RowLayout { spacing: 6
+                    Text { text: "Label:"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: AppTheme.textSecondary }
+                    Rectangle {
+                        id: dynFieldInput; objectName: "dynFieldInput"
+                        Layout.fillWidth: true; Layout.preferredHeight: 30; radius: 8
+                        color: root.dynFieldResolved ? AppTheme.primaryLight : AppTheme.hoverBg
+                        border.color: root.dynFieldResolved ? successGreen : AppTheme.primary; border.width: 1
+                        Behavior on border.color { ColorAnimation { duration: 200 } }
+                        Loader { active: root.spotlight === "field"; sourceComponent: spotGlow }
+                        RowLayout {
+                            anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; spacing: 4
+                            Text { text: root.dynFieldValue; font.family: "Inter"; font.pixelSize: 13; color: AppTheme.textPrimary; font.bold: true; verticalAlignment: Text.AlignVCenter
+                                Loader { active: root.typingTarget === "dynField"; sourceComponent: caretComp; anchors.left: parent.left; anchors.leftMargin: parent.contentWidth + 1; anchors.verticalCenter: parent.verticalCenter }
+                            }
+                            Item { Layout.fillWidth: true }
+                            Text { text: "check_circle"; font.family: "Material Symbols Outlined"; font.pixelSize: 14; color: successGreen; visible: root.dynFieldResolved }
+                        }
+                    }
+                }
+                Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.hoverBg }
+                Rectangle {
+                    Layout.fillWidth: true; Layout.preferredHeight: 28; radius: 8; color: AppTheme.primary
+                    Text { anchors.centerIn: parent; text: "Submit"; font.family: "Inter"; font.pixelSize: 11; font.bold: true; color: "white" }
                 }
             }
         }
