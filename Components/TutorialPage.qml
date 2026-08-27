@@ -420,7 +420,17 @@ Item {
                 { type: "action", target: "insertField", spotlight: "dynFieldEditor",
                   text: "Field inserted!",
                   detail: "{field:Label} marks where your value will go.",
-                  ms: 1500 },
+                  ms: 2500 },
+
+                { type: "pause", spotlight: "dynFieldApp", typing: "dynFieldApp",
+                  text: "Step 4 — Use it in any other app",
+                  detail: "Type the trigger word in any other app — like a chat or email.",
+                  ms: 2000 },
+                { type: "type", target: "dynFieldApp", chars: ".price",
+                  textLen: 6,
+                  text: "Typing '.price'…",
+                  detail: "The trigger word works everywhere, not just here." },
+                { type: "pause", spotlight: "dynFieldApp", ms: 800 },
 
                 { type: "action", target: "openPopup", spotlight: "dynFieldPopup",
                   text: "Form opened!",
@@ -428,7 +438,7 @@ Item {
                   ms: 1500 },
 
                 { type: "pause", spotlight: "dynFieldPopup",
-                  text: "Step 4 — Type the value",
+                  text: "Step 5 — Type the value",
                   detail: "Type the price into the input box.",
                   ms: 2000 },
                 { type: "type", target: "dynField", chars: "$49",
@@ -437,20 +447,10 @@ Item {
                   detail: "This value replaces {field:Label}." },
                 { type: "pause", spotlight: "dynField", ms: 800 },
 
-                { type: "action", target: "submitField", spotlight: "dynFieldResult",
+                { type: "action", target: "submitField", spotlight: "dynFieldApp",
                   text: "Pasted right!",
-                  detail: "$49 replaced {field:Label} in the snippet.",
-                  ms: 2500 },
-
-                { type: "pause", spotlight: "dynFieldApp", typing: "dynFieldApp",
-                  text: "Step 5 — Use it in any other app",
-                  detail: "Type the trigger word in any other app — like a chat or email.",
-                  ms: 2000 },
-                { type: "type", target: "dynFieldApp", chars: ".price",
-                  textLen: 6,
-                  text: "Typing '.price'…",
-                  detail: "The trigger word works everywhere, not just here." },
-                { type: "pause", spotlight: "dynFieldApp", ms: 800 },
+                  detail: "$49 replaced {field:Label} and your snippet expanded.",
+                  ms: 1500 },
 
                 { type: "action", target: "fieldAppExpand", spotlight: "dynFieldApp",
                   text: "Expanding…",
@@ -1467,7 +1467,7 @@ Item {
                         Rectangle {
                             id: dynFieldPopup; objectName: "dynFieldPopup"
                             anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.top: parent.top; anchors.topMargin: 108
+                            anchors.top: parent.top; anchors.topMargin: root.dynSubStep === 1 ? 290 : 108
                             width: parent.width * 0.6
                             height: root.dynFieldPopupOpen ? 128 : 0
                             z: 5
