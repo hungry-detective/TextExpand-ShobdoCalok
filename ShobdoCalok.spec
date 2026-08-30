@@ -20,6 +20,9 @@ _datas = [
 if os.path.exists('client_secret.json'):
     _datas.append(('client_secret.json', '.'))
 
+if os.path.exists(os.path.join('dist', 'ShobdoCalok', 'ShobdoCalok_updater.exe')):
+    _datas.append((os.path.join('dist', 'ShobdoCalok', 'ShobdoCalok_updater.exe'), '.'))
+
 a = Analysis(
     ['main.py'],
     pathex=[],

@@ -447,7 +447,8 @@ class GoogleDriveViewModel(QObject):
         main = self._find_backup_file(token)
         if main:
             history.insert(0, main)
-        return history
+        # Filter out the metadata file if it slipped in
+        return [f for f in history if f.get("name") != BACKUP_META_NAME]
 
     def _rename_backup(self, token: str, file_id: str, old_name: str) -> str:
         """Rename a backup file to add a timestamp suffix. Returns actual new filename."""
@@ -590,22 +591,26 @@ class GoogleDriveViewModel(QObject):
                 self._snippet_store.export_data(),
                 indent=2, ensure_ascii=False,
             )
+
+            # Load metadata ONCE before any operations
+            meta = self._load_meta(token)
+
             file_info = self._find_backup_file(token)
             if file_info:
                 # Rename old backup with timestamp before overwriting
                 actual_name = self._rename_backup(token, file_info["id"], BACKUP_FILE_NAME)
-                # Also update meta to keep history name
-                meta = self._load_meta(token)
-                if name:
-                    meta[actual_name] = name
-                else:
-                    meta[actual_name] = time.strftime("%b %d, %Y %I:%M %p")
-                self._save_meta(token, meta)
+                # Save old backup's display name under its new timestamped filename
+                meta[actual_name] = name if name else time.strftime("%b %d, %Y %I:%M %p")
+
+            # Upload new backup content
             self._upload(token, file_info["id"] if file_info else None, content)
-            # Save backup name in metadata (always, even without user name)
-            meta = self._load_meta(token)
+
+            # Save new backup's display name under BACKUP_FILE_NAME
             meta[BACKUP_FILE_NAME] = name if name else time.strftime("%b %d, %Y %I:%M %p")
+
+            # Save metadata ONCE after all changes
             self._save_meta(token, meta)
+
             # Trim history to keep only MAX_BACKUPS
             self._trim_backup_history(token)
             stamp = time.strftime("%b %d, %Y %I:%M %p")
@@ -787,7 +792,24 @@ class GoogleDriveViewModel(QObject):
                 if not self._creds:
                     raise RuntimeError("Not signed in")
                 token = self._access_token()
+                # Find the file name before deleting
+                import requests
+                resp = requests.get(
+                    f"{DRIVE_FILES_URL}/{file_id}",
+                    params={"fields": "id, name"},
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=30,
+                )
+                file_name = ""
+                if resp.status_code == 200:
+                    file_name = resp.json().get("name", "")
                 self._delete_file(token, file_id)
+                # Clean up metadata entry
+                if file_name and file_name != BACKUP_FILE_NAME:
+                    meta = self._load_meta(token)
+                    if file_name in meta:
+                        del meta[file_name]
+                        self._save_meta(token, meta)
                 self.statusMessage.emit("Backup deleted")
             except Exception as e:
                 self.statusMessage.emit(f"Delete error: {e}")
@@ -824,6 +846,14 @@ class GoogleDriveViewModel(QObject):
                 for f in files:
                     self._delete_file(token, f["id"])
                     count += 1
+                # Clean up metadata entries for deleted files
+                if files:
+                    meta = self._load_meta(token)
+                    for f in files:
+                        if f.get("name") in meta:
+                            del meta[f["name"]]
+                    if meta:
+                        self._save_meta(token, meta)
                 self.statusMessage.emit(f"Deleted {count} old backup(s)")
             except Exception as e:
                 self.statusMessage.emit(f"Delete error: {e}")

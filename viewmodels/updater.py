@@ -698,30 +698,26 @@ class UpdaterViewModel(QObject):
         app_root = self._app_root
         update_dir = self._update_dir
 
-        # Find Python executable — prefer bundled Python in _internal
-        python_exe = sys.executable
-        internal_python = os.path.join(os.path.dirname(python_exe), "_internal", "python.exe")
-        if os.path.exists(internal_python):
-            python_exe = internal_python
+        # Path to standalone updater exe (bundled next to main app exe)
+        updater_exe = os.path.join(app_root, "ShobdoCalok_updater.exe")
+        # Also check source dir for dev mode
+        if not os.path.exists(updater_exe):
+            updater_exe = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "dist", "ShobdoCalok", "ShobdoCalok_updater.exe"
+            )
 
-        # Path to GUI updater script — bundled in app root
-        gui_script = os.path.join(app_root, "updater_gui.py")
-        # Also check source directory (for non-frozen mode)
-        if not os.path.exists(gui_script):
-            gui_script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "updater_gui.py")
-
-        if os.path.exists(gui_script):
-            # Launch GUI updater
+        if os.path.exists(updater_exe):
+            # Launch the standalone GUI updater (has its own PySide6 bundled)
             try:
                 subprocess.Popen(
-                    [python_exe, gui_script, new_root, app_root, sys.executable, extract_to, update_dir],
+                    [updater_exe, new_root, app_root, sys.executable, extract_to, update_dir],
                     cwd=app_root,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             except Exception:
-                # Fallback to batch
                 self._launch_batch_applier(new_root, extract_to, zip_path)
         else:
+            # No GUI updater available, use batch script
             self._launch_batch_applier(new_root, extract_to, zip_path)
 
         time.sleep(1)
@@ -732,6 +728,7 @@ class UpdaterViewModel(QObject):
         app_root = self._app_root
         update_dir = self._update_dir
         bat = os.path.join(update_dir, "apply_update.bat")
+        vbs = os.path.join(update_dir, "apply_update.vbs")
         log_file = os.path.join(update_dir, "update_log.txt")
 
         batch_script = f"""@echo off
