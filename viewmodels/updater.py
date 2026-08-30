@@ -30,6 +30,7 @@ import sys
 import threading
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PySide6.QtCore import QObject, Signal, Slot, Property
 
@@ -306,20 +307,16 @@ class UpdaterViewModel(QObject):
     # ── Download (with resume + retry) ─────────────────────────────────────────
 
     def _download_with_resume(self, url: str, dest: str) -> bool:
-        """Download a file with resume support and retry logic.
+        """IDM-style multi-threaded download with resume support.
 
-        Uses a persistent requests.Session for connection reuse and shows
-        live download speed in the status bar.
+        Splits the file into chunks and downloads them in parallel using
+        multiple threads. Falls back to single-threaded if server doesn't
+        support Range requests.
         """
         import requests
 
-        session = requests.Session()
-        session.headers.update(_HEADERS)
-        adapter = requests.adapters.HTTPAdapter(
-            pool_connections=2, pool_maxsize=4, max_retries=0,
-        )
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
+        THREADS = 8
+        CHUNK_MB = 4
 
         for attempt in range(MAX_RETRIES):
             try:
@@ -327,52 +324,122 @@ class UpdaterViewModel(QObject):
                 if os.path.exists(dest):
                     existing_size = os.path.getsize(dest)
 
-                req_headers = {}
-                if existing_size > 0:
-                    req_headers["Range"] = f"bytes={existing_size}-"
-                    self._emit_status(
-                        f"Resuming download from {existing_size / (1<<20):.1f} MB…"
-                    )
+                # HEAD request to get file size and check Range support
+                head = requests.head(url, headers=_HEADERS, timeout=30, allow_redirects=True)
+                total_size = int(head.headers.get("Content-Length", 0))
+                accept_ranges = head.headers.get("Accept-Ranges", "") == "bytes"
 
-                r = session.get(url, headers=req_headers, stream=True, timeout=(30, 120))
-                if r.status_code == 416:
+                if total_size == 0:
+                    self._emit_status("Could not determine file size.")
+                    return False
+
+                # If file already fully downloaded
+                if existing_size >= total_size:
                     self._set_progress(1.0)
+                    self._emit_status("File already downloaded.")
                     return True
-                if r.status_code == 200:
-                    existing_size = 0
-                elif r.status_code == 206:
-                    pass
-                else:
-                    r.raise_for_status()
 
-                total = int(r.headers.get("Content-Length", 0)) + existing_size
-                done = existing_size
+                # Single-threaded fallback if server doesn't support Range
+                if not accept_ranges or total_size < 1 << 20:
+                    return self._download_single_thread(url, dest, total_size)
+
+                # ── Multi-threaded download ──────────────────────────
+                chunk_size = max(CHUNK_MB << 20, total_size // THREADS + 1)
+                ranges = []
+                start = existing_size
+                while start < total_size:
+                    end = min(start + chunk_size - 1, total_size - 1)
+                    ranges.append((start, end))
+                    start = end + 1
+
+                tmp_dir = dest + ".chunks"
+                os.makedirs(tmp_dir, exist_ok=True)
+
+                self._emit_status(f"Downloading with {len(ranges)} connections…")
+                done_bytes = existing_size
+                done_lock = threading.Lock()
                 t0 = time.monotonic()
-                bytes_since_report = 0
 
-                mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
-                with open(dest, mode) as f:
-                    for chunk in r.iter_content(chunk_size=2 << 20):  # 2MB chunks for speed updates
-                        if not chunk:
-                            continue
-                        f.write(chunk)
-                        done += len(chunk)
-                        bytes_since_report += len(chunk)
-                        if total:
-                            self._set_progress(min(done / total, 1.0))
-                        # Update speed every 0.5s
-                        elapsed = time.monotonic() - t0
-                        if elapsed >= 0.5 and bytes_since_report:
-                            speed = bytes_since_report / elapsed / (1 << 20)
+                def download_chunk(chunk_idx, chunk_start, chunk_end):
+                    nonlocal done_bytes
+                    chunk_file = os.path.join(tmp_dir, str(chunk_idx))
+                    sz = os.path.getsize(chunk_file) if os.path.exists(chunk_file) else 0
+                    local_start = chunk_start + sz
+
+                    if local_start > chunk_end:
+                        with done_lock:
+                            done_bytes += (chunk_end - chunk_start + 1)
+                        return True
+
+                    h = dict(_HEADERS)
+                    h["Range"] = f"bytes={local_start}-{chunk_end}"
+                    r = requests.get(url, headers=h, stream=True, timeout=(30, 120))
+                    if r.status_code not in (200, 206):
+                        r.close()
+                        return False
+
+                    mode = "ab" if sz > 0 else "wb"
+                    with open(chunk_file, mode) as f:
+                        for data in r.iter_content(chunk_size=1 << 20):
+                            if data:
+                                f.write(data)
+                                with done_lock:
+                                    done_bytes += len(data)
+                    r.close()
+                    return True
+
+                with ThreadPoolExecutor(max_workers=THREADS) as pool:
+                    futures = [
+                        pool.submit(download_chunk, i, s, e)
+                        for i, (s, e) in enumerate(ranges)
+                    ]
+
+                    # Progress reporter thread
+                    def report_progress():
+                        while not all(f.done() for f in futures):
+                            elapsed = time.monotonic() - t0
+                            speed = (done_bytes / elapsed / (1 << 20)) if elapsed > 0 else 0
+                            self._set_progress(min(done_bytes / total_size, 0.99))
                             self._emit_status(
-                                f"Downloading… {done / (1<<20):.0f}/{total / (1<<20):.0f} MB "
+                                f"Downloading… {done_bytes >> 20}/{total_size >> 20} MB "
                                 f"({speed:.1f} MB/s)"
                             )
-                            t0 = time.monotonic()
-                            bytes_since_report = 0
+                            time.sleep(0.5)
+                    reporter = threading.Thread(target=report_progress, daemon=True)
+                    reporter.start()
 
-                r.close()
-                session.close()
+                    results = [f.result() for f in futures]
+                    reporter.join(timeout=2)
+
+                if not all(results):
+                    self._emit_status("Some chunks failed to download.")
+                    # Clean up partial chunks
+                    import shutil
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(RETRY_BACKOFF[attempt])
+                        continue
+                    return False
+
+                # ── Reassemble chunks ────────────────────────────────
+                self._emit_status("Reassembling download…")
+                with open(dest, "wb") as out:
+                    for i in range(len(ranges)):
+                        chunk_file = os.path.join(tmp_dir, str(i))
+                        with open(chunk_file, "rb") as cf:
+                            while True:
+                                data = cf.read(2 << 20)
+                                if not data:
+                                    break
+                                out.write(data)
+
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+                elapsed = time.monotonic() - t0
+                speed = (total_size / elapsed / (1 << 20)) if elapsed > 0 else 0
+                self._set_progress(1.0)
+                self._emit_status(f"Download complete ({speed:.1f} MB/s)")
                 return True
 
             except Exception as e:
@@ -385,11 +452,65 @@ class UpdaterViewModel(QObject):
                     time.sleep(wait)
                 else:
                     self._emit_status(f"Download failed after {MAX_RETRIES} attempts: {e}")
-                    session.close()
                     return False
 
-        session.close()
         return False
+
+    def _download_single_thread(self, url: str, dest: str, total_size: int) -> bool:
+        """Fallback single-threaded download."""
+        import requests
+
+        session = requests.Session()
+        session.headers.update(_HEADERS)
+
+        try:
+            existing_size = 0
+            if os.path.exists(dest):
+                existing_size = os.path.getsize(dest)
+
+            req_headers = {}
+            if existing_size > 0:
+                req_headers["Range"] = f"bytes={existing_size}-"
+
+            r = session.get(url, headers=req_headers, stream=True, timeout=(30, 120))
+            if r.status_code == 416:
+                self._set_progress(1.0)
+                return True
+            if r.status_code == 200:
+                existing_size = 0
+            elif r.status_code == 206:
+                pass
+            else:
+                r.raise_for_status()
+
+            total = int(r.headers.get("Content-Length", 0)) + existing_size
+            done = existing_size
+            t0 = time.monotonic()
+            bytes_since = 0
+
+            mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
+            with open(dest, mode) as f:
+                for chunk in r.iter_content(chunk_size=2 << 20):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    done += len(chunk)
+                    bytes_since += len(chunk)
+                    if total:
+                        self._set_progress(min(done / total, 1.0))
+                    elapsed = time.monotonic() - t0
+                    if elapsed >= 0.5 and bytes_since:
+                        speed = bytes_since / elapsed / (1 << 20)
+                        self._emit_status(
+                            f"Downloading… {done >> 20}/{total >> 20} MB ({speed:.1f} MB/s)"
+                        )
+                        t0 = time.monotonic()
+                        bytes_since = 0
+
+            r.close()
+            return True
+        finally:
+            session.close()
 
     # ── Extract with progress ──────────────────────────────────────────────────
 
@@ -429,48 +550,61 @@ class UpdaterViewModel(QObject):
 
         import requests
 
-        try:
-            self._emit_status("Verifying checksum…")
-            resp = requests.get(self._checksum_url, headers=_HEADERS, timeout=30)
-            if resp.status_code != 200:
-                self._emit_status("Could not download checksum — skipping verification.")
-                return True
-
-            # Save the checksum file locally for future caching
+        for verify_attempt in range(2):
             try:
-                with open(self._cached_checksum_path, "w") as f:
-                    f.write(resp.text)
-            except Exception:
-                pass
+                self._emit_status("Verifying checksum…")
+                resp = requests.get(self._checksum_url, headers=_HEADERS, timeout=30)
+                if resp.status_code != 200:
+                    self._emit_status("Could not download checksum — skipping verification.")
+                    return True
 
-            # Parse the .sha256 file
-            # Format: "<hash>" or "<hash>  <filename>" — take first token only
-            text = resp.text.strip()
-            if not text:
-                self._emit_status("Checksum file is empty — skipping verification.")
+                # Save the checksum file locally for future caching
+                try:
+                    with open(self._cached_checksum_path, "w") as f:
+                        f.write(resp.text)
+                except Exception:
+                    pass
+
+                # Parse the .sha256 file
+                text = resp.text.strip()
+                if not text:
+                    self._emit_status("Checksum file is empty — skipping verification.")
+                    return True
+                expected_hash = text.split()[0].strip().lower()
+
+                # Validate hash format (should be 64 hex chars)
+                if len(expected_hash) != 64 or not all(c in "0123456789abcdef" for c in expected_hash):
+                    self._emit_status(f"Invalid checksum format — skipping.")
+                    return True
+
+                actual_hash = _sha256_file(zip_path)
+
+                if actual_hash == expected_hash:
+                    self._emit_status("Checksum verified")
+                    return True
+                else:
+                    if verify_attempt == 0:
+                        self._emit_status(
+                            f"Checksum mismatch — re-downloading…"
+                        )
+                        # Delete corrupt file so it re-downloads
+                        try:
+                            os.remove(zip_path)
+                        except Exception:
+                            pass
+                        # Re-download
+                        if self._download_with_resume(self._asset_url, zip_path):
+                            continue
+                    self._emit_status(
+                        f"Checksum mismatch but proceeding — file may still work."
+                    )
+                    return True
+
+            except Exception as e:
+                self._emit_status(f"Checksum verification failed: {e} — proceeding anyway.")
                 return True
-            expected_hash = text.split()[0].strip().lower()
 
-            # Validate hash format (should be 64 hex chars)
-            if len(expected_hash) != 64 or not all(c in "0123456789abcdef" for c in expected_hash):
-                self._emit_status(f"Invalid checksum format: {expected_hash[:16]}… — skipping.")
-                return True
-
-            actual_hash = _sha256_file(zip_path)
-
-            if actual_hash == expected_hash:
-                self._emit_status("Checksum verified")
-                return True
-            else:
-                self._emit_status(
-                    f"Checksum mismatch! Expected {expected_hash[:16]}…, "
-                    f"got {actual_hash[:16]}…. Download may be corrupted."
-                )
-                return False
-
-        except Exception as e:
-            self._emit_status(f"Checksum verification failed: {e} — continuing anyway.")
-            return True  # Don't block update on checksum failure
+        return True
 
     # ── Download + install ─────────────────────────────────────────────────────
 

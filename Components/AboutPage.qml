@@ -365,7 +365,7 @@ Item {
             // Progress bar
             Rectangle {
                 Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: 240
+                Layout.preferredWidth: 260
                 height: 6; radius: 3
                 color: AppTheme.isDark ? "#1e293b" : "#e2e8f0"
 
