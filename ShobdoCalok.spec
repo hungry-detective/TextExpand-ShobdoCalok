@@ -12,6 +12,7 @@ _datas = [
     ('MaterialSymbolsOutlined.ttf', '.'),
     ('app-icon.svg', '.'),
     ('app-icon.ico', '.'),
+    ('updater_gui.py', '.'),
 ]
 
 # Bundle Google OAuth credentials ONLY if present locally (never committed).

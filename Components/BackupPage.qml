@@ -362,21 +362,16 @@ Item {
         id: restorePicker
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 440; height: 440
+        width: 460; height: 480
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
         onOpened: { restoreListModel.clear(); driveViewModel.listBackups() }
         contentItem: ColumnLayout {
             spacing: 12; anchors.margins: 20
             Text {
-                text: "Choose Backup to Restore"
+                text: "Your Backups"
                 font.family: "Inter"; font.pixelSize: 16; font.bold: true
                 color: AppTheme.textPrimary
-            }
-            Text {
-                text: "Select which backup you want to restore:"
-                font.family: "Inter"; font.pixelSize: 12
-                color: AppTheme.textSecondary
             }
             Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
             Rectangle {
@@ -391,13 +386,14 @@ Item {
                     model: ListModel { id: restoreListModel }
                     delegate: Rectangle {
                         id: restoreItem
-                        width: restoreList.width; height: 52; radius: 8
+                        width: restoreList.width; height: 56; radius: 8
                         color: restoreItemHover.hovered ? AppTheme.primaryLight : "transparent"
                         property string fileId: model.fileId
+                        property string backupFileName: model.fileName
                         property int itemIndex: index
                         HoverHandler { id: restoreItemHover }
                         RowLayout {
-                            anchors.fill: parent; anchors.margins: 8; spacing: 10
+                            anchors.fill: parent; anchors.margins: 8; spacing: 8
                             Rectangle {
                                 width: 36; height: 36; radius: 8
                                 color: restoreItem.itemIndex === 0 ? AppTheme.primaryLight : (AppTheme.isDark ? "#2a2d35" : "#f1f5f9")
@@ -422,12 +418,12 @@ Item {
                                 }
                             }
                             Rectangle {
-                                width: 70; height: 28; radius: 7
+                                width: 64; height: 26; radius: 6
                                 color: restoreBtnItemHover.hovered ? AppTheme.primaryHover : AppTheme.primary
                                 HoverHandler { id: restoreBtnItemHover }
                                 Text {
                                     anchors.centerIn: parent; text: "RESTORE"
-                                    font.family: "Inter"; font.pixelSize: 9; font.bold: true; color: "white"
+                                    font.family: "Inter"; font.pixelSize: 8; font.bold: true; color: "white"
                                 }
                                 MouseArea {
                                     anchors.fill: parent; cursorShape: Qt.PointingHandCursor
@@ -441,15 +437,23 @@ Item {
                                     }
                                 }
                             }
-                        }
-                        MouseArea {
-                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                restorePicker.close()
-                                if (restoreItem.itemIndex === 0) {
-                                    driveViewModel.restore()
-                                } else {
-                                    driveViewModel.restoreFromFile(restoreItem.fileId)
+                            Rectangle {
+                                width: 26; height: 26; radius: 6
+                                color: deleteItemHover.hovered ? "#fef2f2" : "transparent"
+                                border.color: "#ef4444"; border.width: 1
+                                visible: restoreListModel.count > 1
+                                HoverHandler { id: deleteItemHover }
+                                Text {
+                                    anchors.centerIn: parent; text: "delete"
+                                    font.family: "Material Symbols Outlined"; font.pixelSize: 14
+                                    color: "#ef4444"
+                                }
+                                MouseArea {
+                                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        driveViewModel.deleteBackup(restoreItem.fileId)
+                                        restoreListModel.remove(restoreItem.itemIndex)
+                                    }
                                 }
                             }
                         }
@@ -523,6 +527,7 @@ Item {
             for (var i = 0; i < list.length; i++) {
                 restoreListModel.append({
                     "fileId": list[i].id,
+                    "fileName": list[i].name,
                     "backupName": list[i].backupName,
                     "timeLabel": list[i].timeLabel
                 })

@@ -31,6 +31,7 @@ DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
 DRIVE_ABOUT_URL = "https://www.googleapis.com/drive/v3/about"
 BACKUP_FILE_NAME = "ShobdoCalok.snippets.json"
 BACKUP_HISTORY_PREFIX = "ShobdoCalok-backup-"
+BACKUP_META_NAME = "ShobdoCalok.backup_meta.json"
 MAX_BACKUPS = 10  # Keep up to 10 timestamped backups
 
 
@@ -353,6 +354,76 @@ class GoogleDriveViewModel(QObject):
         files = resp.json().get("files", [])
         return files[0] if files else None
 
+    def _find_meta_file(self, token: str):
+        import requests
+        url = DRIVE_FILES_URL
+        params = {
+            "q": f"name='{BACKUP_META_NAME}' and trashed=false",
+            "spaces": "appDataFolder",
+            "fields": "files(id, modifiedTime)",
+            "pageSize": "1",
+        }
+        resp = requests.get(
+            url, params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return None
+        files = resp.json().get("files", [])
+        return files[0] if files else None
+
+    def _load_meta(self, token: str) -> dict:
+        file_info = self._find_meta_file(token)
+        if not file_info:
+            return {}
+        content = self._download(token, file_info["id"])
+        try:
+            return json.loads(content)
+        except Exception:
+            return {}
+
+    def _save_meta(self, token: str, meta: dict):
+        content = json.dumps(meta, indent=2, ensure_ascii=False)
+        file_info = self._find_meta_file(token)
+        self._upload_meta(token, file_info["id"] if file_info else None, content)
+
+    def _upload_meta(self, token: str, file_id: str, content: str):
+        import requests
+        def _multipart(fid: str):
+            metadata = {"name": BACKUP_META_NAME}
+            if not fid:
+                metadata["parents"] = ["appDataFolder"]
+            boundary = "----ShobdoCalokMeta" + str(random.randint(10**8, 10**9 - 1))
+            body = (
+                f"--{boundary}\r\n"
+                "Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                + json.dumps(metadata)
+                + "\r\n"
+                f"--{boundary}\r\n"
+                "Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                + content
+                + "\r\n"
+                f"--{boundary}--\r\n"
+            ).encode("utf-8")
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": f"multipart/related; boundary={boundary}",
+            }
+            return body, headers
+
+        if file_id:
+            url = (
+                f"https://www.googleapis.com/upload/drive/v3/files/{file_id}"
+                f"?uploadType=multipart&addParents=appDataFolder"
+            )
+            body, headers = _multipart(file_id)
+            requests.patch(url, headers=headers, data=body, timeout=60)
+        else:
+            url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
+            body, headers = _multipart(None)
+            requests.post(url, headers=headers, data=body, timeout=60)
+
     def _list_all_backups(self, token: str) -> list:
         """List all backup files (main + timestamped history)."""
         import requests
@@ -522,7 +593,18 @@ class GoogleDriveViewModel(QObject):
             if file_info:
                 # Rename old backup with timestamp before overwriting
                 self._rename_backup(token, file_info["id"], BACKUP_FILE_NAME)
+                # Also update meta to keep history name
+                if name:
+                    meta = self._load_meta(token)
+                    old_dt = time.strftime("%Y-%m-%d-%H-%M")
+                    meta[f"{BACKUP_HISTORY_PREFIX}{old_dt}.json"] = name
+                    self._save_meta(token, meta)
             self._upload(token, file_info["id"] if file_info else None, content)
+            # Save backup name in metadata
+            if name:
+                meta = self._load_meta(token)
+                meta[BACKUP_FILE_NAME] = name
+                self._save_meta(token, meta)
             # Trim history to keep only MAX_BACKUPS
             self._trim_backup_history(token)
             stamp = time.strftime("%b %d, %Y %I:%M %p")
@@ -646,28 +728,32 @@ class GoogleDriveViewModel(QObject):
                     return
                 token = self._access_token()
                 files = self._list_all_backups(token)
+                meta = self._load_meta(token)
                 result = []
                 from datetime import datetime
                 for f in files:
                     name = f.get("name", "")
                     mt = f.get("modifiedTime", "")
-                    # Extract backup name and time label
+                    # Get backup name from metadata, or generate one
+                    meta_name = meta.get(name, "")
                     if name == BACKUP_FILE_NAME:
-                        backup_name = "Latest Backup"
+                        backup_name = meta_name if meta_name else "Latest Backup"
                     elif name.startswith(BACKUP_HISTORY_PREFIX):
-                        dt_str = name.replace(BACKUP_HISTORY_PREFIX, "").replace(".json", "")
-                        # Convert "2026-08-30-11-34" to readable format
-                        try:
-                            parts = dt_str.split("-")
-                            if len(parts) >= 5:
-                                dt_obj = datetime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
-                                backup_name = dt_obj.strftime("Backup — %d %B %Y, %I:%M %p")
-                            else:
+                        if meta_name:
+                            backup_name = meta_name
+                        else:
+                            dt_str = name.replace(BACKUP_HISTORY_PREFIX, "").replace(".json", "")
+                            try:
+                                parts = dt_str.split("-")
+                                if len(parts) >= 5:
+                                    dt_obj = datetime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
+                                    backup_name = dt_obj.strftime("Backup — %d %B %Y, %I:%M %p")
+                                else:
+                                    backup_name = "Backup: " + dt_str
+                            except Exception:
                                 backup_name = "Backup: " + dt_str
-                        except Exception:
-                            backup_name = "Backup: " + dt_str
                     else:
-                        backup_name = name
+                        backup_name = meta_name if meta_name else name
                     # Format time label from modifiedTime
                     time_label = ""
                     if mt:
@@ -687,6 +773,23 @@ class GoogleDriveViewModel(QObject):
             except Exception as e:
                 self.statusMessage.emit(f"Error listing backups: {e}")
                 self.backupListReady.emit([])
+            finally:
+                self._set_busy(False)
+        threading.Thread(target=_worker, daemon=True).start()
+
+    @Slot(str)
+    def deleteBackup(self, file_id: str):
+        """Delete a specific backup by file ID."""
+        def _worker():
+            try:
+                self._set_busy(True)
+                if not self._creds:
+                    raise RuntimeError("Not signed in")
+                token = self._access_token()
+                self._delete_file(token, file_id)
+                self.statusMessage.emit("Backup deleted")
+            except Exception as e:
+                self.statusMessage.emit(f"Delete error: {e}")
             finally:
                 self._set_busy(False)
         threading.Thread(target=_worker, daemon=True).start()
