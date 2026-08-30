@@ -42,7 +42,7 @@ except Exception:  # pragma: no cover - fallback for odd import setups
 
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
-_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "ShobdoCalok-Updater"}
+_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "ShobdoCalok-Updater", "Accept-Encoding": "gzip, deflate"}
 
 MAX_RETRIES = 3
 RETRY_BACKOFF = [1, 3, 8]  # seconds between retries
@@ -548,38 +548,58 @@ set "NEW={new_root}"
 set "TMPEXTRACT={extract_to}"
 set "LOG={log_file}"
 
-echo ===== ShobdoCalok Updater ===== > "%LOG%"
+echo ===== ShobdoCalok Updater =====
+echo Timestamp: %DATE% %TIME%
+echo APP=%APP%
+echo NEW=%NEW%
+echo. >> "%LOG%"
+echo ===== ShobdoCalok Updater ===== >> "%LOG%"
 echo Timestamp: %DATE% %TIME% >> "%LOG%"
 echo APP=%APP% >> "%LOG%"
 echo NEW=%NEW% >> "%LOG%"
 echo. >> "%LOG%"
 
-echo [1/4] Killing app process... >> "%LOG%"
-taskkill /F /IM ShobdoCalok.exe >> "%LOG%" 2>&1
-timeout /t 2 /nobreak >nul
+echo [1/4] Killing app process...
+taskkill /F /IM ShobdoCalok.exe 2>nul
+taskkill /F /IM python.exe 2>nul
+echo [1/4] Waiting for process to exit...
+timeout /t 3 /nobreak >nul
+echo [1/4] Process killed.
 
-echo [2/4] Checking source... >> "%LOG%"
-if not exist "%NEW%\\ShobdoCalok.exe" (
-    echo ERROR: No ShobdoCalok.exe in source: %NEW% >> "%LOG%"
+echo [2/4] Checking source...
+if exist "%NEW%\\ShobdoCalok.exe" (
+    echo [2/4] Source OK ^(packaged^)
+    set "LAUNCH_EXE=1"
+) else if exist "%NEW%\\main.py" (
+    echo [2/4] Source OK ^(source mode^)
+    set "LAUNCH_EXE=0"
+) else (
+    echo [2/4] ERROR: No app found in: %NEW%
+    echo [2/4] Checking contents...
+    dir "%NEW%" /b
+    pause
     goto cleanup
 )
-echo Source OK >> "%LOG%"
 
-echo [3/4] Mirroring new files... >> "%LOG%"
-robocopy "%NEW%" "%APP%" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP >> "%LOG%" 2>&1
+echo [3/4] Copying new files...
+robocopy "%NEW%" "%APP%" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP
 set RC=!errorlevel!
-echo robocopy finished with errorlevel !RC! >> "%LOG%"
-if !RC! GEQ 8 (
-    echo WARNING: robocopy had issues >> "%LOG%"
-)
+echo [3/4] Copy finished ^(errorlevel !RC!^)
 
 :launch
-echo [4/4] Starting ShobdoCalok.exe... >> "%LOG%"
-start "" "%APP%\\ShobdoCalok.exe"
+echo [4/4] Starting app...
+if "!LAUNCH_EXE!"=="1" (
+    start "" "%APP%\\ShobdoCalok.exe"
+) else (
+    start "" /D "%APP%" python main.py
+)
+echo [4/4] App started.
 
 :cleanup
-echo Cleaning up... >> "%LOG%"
+echo Cleaning up...
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
+echo Done! Closing in 3 seconds...
+timeout /t 3 /nobreak >nul
 del "%~f0" 2>nul
 """
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
