@@ -5,9 +5,28 @@ import threading
 
 # Suppress brotlicffi import errors — it's not needed and causes crashes
 # on machines where it's not installed (transitive dep of mitmproxy/py7zr).
-import types
-sys.modules.setdefault("brotli", types.ModuleType("brotli"))
-sys.modules.setdefault("brotlicffi", types.ModuleType("brotlicffi"))
+# urllib3 checks brotlicffi.error and brotli.Decompressor, so stubs must
+# provide those attributes to avoid AttributeError.
+import types as _types
+
+class _BrotliStubModule(_types.ModuleType):
+    """Empty module that claims brotli is not available."""
+    error = type("error", (Exception,), {})
+    class Decompressor:
+        def __init__(self, **kw): pass
+        def decompress(self, data, max_length=0): return data
+        def flush(self): return b""
+    def __getattr__(self, name):
+        raise ImportError(f"module 'brotli' has no attribute '{name}'")
+    def __bool__(self):
+        return False
+
+for _name in ("brotli", "brotlicffi", "_brotlicffi"):
+    if _name not in sys.modules:
+        mod = _BrotliStubModule(_name)
+        mod.__package__ = _name
+        mod.__path__ = []
+        sys.modules[_name] = mod
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QFontDatabase, QIcon, QAction
