@@ -12,7 +12,6 @@ _datas = [
     ('MaterialSymbolsOutlined.ttf', '.'),
     ('app-icon.svg', '.'),
     ('app-icon.ico', '.'),
-    ('dist/ShobdoCalok/ShobdoCalok_updater.exe', '.'),
 ]
 
 # Bundle Google OAuth credentials ONLY if present locally (never committed).
@@ -20,8 +19,15 @@ _datas = [
 if os.path.exists('client_secret.json'):
     _datas.append(('client_secret.json', '.'))
 
-if os.path.exists(os.path.join('dist', 'ShobdoCalok', 'ShobdoCalok_updater.exe')):
-    _datas.append((os.path.join('dist', 'ShobdoCalok', 'ShobdoCalok_updater.exe'), '.'))
+# Bundle the standalone updater exe (must be built first via updater.spec)
+updater_paths = [
+    os.path.join('dist', 'ShobdoCalok', 'ShobdoCalok_updater.exe'),
+    os.path.join('dist', 'ShobdoCalok_updater.exe'),
+]
+for _p in updater_paths:
+    if os.path.exists(_p):
+        _datas.append((_p, '.'))
+        break
 
 a = Analysis(
     ['main.py'],
@@ -71,3 +77,10 @@ coll = COLLECT(
     upx_exclude=[],
     name='ShobdoCalok',
 )
+
+# Post-build: ensure the standalone updater is bundled next to the main exe
+import shutil as _shutil
+_updater_src = os.path.join('dist', 'ShobdoCalok_updater.exe')
+_updater_dst = os.path.join('dist', 'ShobdoCalok', 'ShobdoCalok_updater.exe')
+if os.path.exists(_updater_src) and not os.path.exists(_updater_dst):
+    _shutil.copy2(_updater_src, _updater_dst)

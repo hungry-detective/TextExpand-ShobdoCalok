@@ -7,15 +7,20 @@ Built as a separate executable so it has its own PySide6 runtime.
 import os
 import shutil
 
+# Use separate workpath to avoid conflicts with main app build
+WORKPATH = 'build_updater'
+DISTPATH = 'dist'
+
 # Clean previous build
-if os.path.exists('build_updater'):
-    shutil.rmtree('build_updater', ignore_errors=True)
-if os.path.exists('dist_updater'):
-    shutil.rmtree('dist_updater', ignore_errors=True)
+if os.path.exists(WORKPATH):
+    shutil.rmtree(WORKPATH, ignore_errors=True)
+
+# Ensure dist/ShobdoCalok/ exists so the updater is in the right place
+os.makedirs(os.path.join(DISTPATH, 'ShobdoCalok'), exist_ok=True)
 
 a = Analysis(
     ['updater_gui.py'],
-    pathex=[],
+    pathex=[WORKPATH],
     binaries=[],
     datas=[],
     hiddenimports=[
@@ -51,3 +56,9 @@ exe = EXE(
     entitlements_file=None,
     icon=['app-icon.ico'],
 )
+
+# Move the single-file exe into dist/ShobdoCalok/ so the main build can find it
+_src = os.path.join(DISTPATH, 'ShobdoCalok_updater.exe')
+_dst = os.path.join(DISTPATH, 'ShobdoCalok', 'ShobdoCalok_updater.exe')
+if os.path.exists(_src) and not os.path.exists(_dst):
+    shutil.copy2(_src, _dst)

@@ -230,7 +230,7 @@ Item {
         id: backupOptionsDialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 420; height: 460
+        width: 420; height: 510
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
         onOpened: { driveViewModel.listBackups() }
@@ -293,6 +293,22 @@ Item {
                     anchors.centerIn: parent; spacing: 8
                     Text { text: "delete_sweep"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "#ef4444" }
                     Text { text: "Delete Old Backups"; font.family: "Inter"; font.pixelSize: 13; font.bold: true; color: "#ef4444" }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true; height: 40; radius: 10
+                color: resetNamesHover.hovered ? "#fef2f2" : "transparent"
+                border.color: AppTheme.textSecondary; border.width: 1
+                HoverHandler { id: resetNamesHover }
+                MouseArea {
+                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    onClicked: { backupOptionsDialog.close(); driveViewModel.clearMetadata() }
+                }
+                RowLayout {
+                    anchors.centerIn: parent; spacing: 8
+                    Text { text: "refresh"; font.family: "Material Symbols Outlined"; font.pixelSize: 16; color: AppTheme.textSecondary }
+                    Text { text: "Reset Backup Names"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: AppTheme.textSecondary }
                 }
             }
 
@@ -373,12 +389,50 @@ Item {
                 font.family: "Inter"; font.pixelSize: 16; font.bold: true
                 color: AppTheme.textPrimary
             }
+            // Loading indicator
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: driveViewModel.busy && restoreListModel.count === 0
+                Rectangle {
+                    width: 16; height: 16; radius: 8
+                    color: "transparent"
+                    border.width: 2
+                    border.color: AppTheme.primary
+                    RotationAnimation on rotation {
+                        from: 0; to: 360
+                        duration: 800
+                        loops: Animation.Infinite
+                        running: parent.visible
+                    }
+                }
+                Text {
+                    text: "Fetching backups from Google Drive..."
+                    font.family: "Inter"; font.pixelSize: 11
+                    color: AppTheme.textSecondary
+                }
+            }
             Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
             Rectangle {
                 Layout.fillWidth: true; Layout.fillHeight: true; radius: 10
                 color: AppTheme.isDark ? "#1a1d23" : "#f8fafc"
                 border.color: AppTheme.hoverBg; border.width: 1
                 clip: true
+                // Show loading spinner overlay while fetching
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 40; height: 40; radius: 20
+                    color: "transparent"
+                    border.width: 3
+                    border.color: AppTheme.primary
+                    visible: driveViewModel.busy && restoreListModel.count === 0
+                    RotationAnimation on rotation {
+                        from: 0; to: 360
+                        duration: 1000
+                        loops: Animation.Infinite
+                        running: parent.visible
+                    }
+                }
                 ListView {
                     id: restoreList
                     anchors.fill: parent; anchors.margins: 6

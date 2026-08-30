@@ -415,14 +415,18 @@ class GoogleDriveViewModel(QObject):
         if file_id:
             url = (
                 f"https://www.googleapis.com/upload/drive/v3/files/{file_id}"
-                f"?uploadType=multipart&addParents=appDataFolder"
+                f"?uploadType=multipart"
             )
             body, headers = _multipart(file_id)
-            requests.patch(url, headers=headers, data=body, timeout=60)
+            resp = requests.patch(url, headers=headers, data=body, timeout=60)
+            if resp.status_code not in (200, 201):
+                print(f"Meta upload PATCH failed: {resp.status_code} {resp.text[:200]}")
         else:
             url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
             body, headers = _multipart(None)
-            requests.post(url, headers=headers, data=body, timeout=60)
+            resp = requests.post(url, headers=headers, data=body, timeout=60)
+            if resp.status_code not in (200, 201):
+                print(f"Meta upload POST failed: {resp.status_code} {resp.text[:200]}")
 
     def _list_all_backups(self, token: str) -> list:
         """List all backup files (main + timestamped history)."""
@@ -610,6 +614,7 @@ class GoogleDriveViewModel(QObject):
 
             # Save metadata ONCE after all changes
             self._save_meta(token, meta)
+            self.statusMessage.emit(f"Backup '{name or 'auto'}' saved (meta keys: {list(meta.keys())})")
 
             # Trim history to keep only MAX_BACKUPS
             self._trim_backup_history(token)
@@ -733,8 +738,14 @@ class GoogleDriveViewModel(QObject):
                     self.backupListReady.emit([])
                     return
                 token = self._access_token()
-                files = self._list_all_backups(token)
-                meta = self._load_meta(token)
+                # Run file listing and metadata loading in parallel for speed
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    files_future = executor.submit(self._list_all_backups, token)
+                    meta_future = executor.submit(self._load_meta, token)
+                    files = files_future.result(timeout=15)
+                    meta = meta_future.result(timeout=15)
+                self.statusMessage.emit(f"Loaded {len(files)} backup(s)")
                 result = []
                 from datetime import datetime
                 for f in files:
@@ -775,6 +786,9 @@ class GoogleDriveViewModel(QObject):
                         "timeLabel": time_label,
                         "label": backup_name,
                     })
+                # Show first few names for debugging
+                names_preview = ", ".join([r["backupName"][:30] for r in result[:3]])
+                self.statusMessage.emit(f"Backups: {names_preview}")
                 self.backupListReady.emit(result)
             except Exception as e:
                 self.statusMessage.emit(f"Error listing backups: {e}")
@@ -857,6 +871,44 @@ class GoogleDriveViewModel(QObject):
                 self.statusMessage.emit(f"Deleted {count} old backup(s)")
             except Exception as e:
                 self.statusMessage.emit(f"Delete error: {e}")
+            finally:
+                self._set_busy(False)
+        threading.Thread(target=_worker, daemon=True).start()
+
+    @Slot()
+    def clearMetadata(self):
+        """Delete the metadata file and rebuild it with current file names as defaults."""
+        def _worker():
+            try:
+                self._set_busy(True)
+                if not self._creds:
+                    raise RuntimeError("Not signed in")
+                token = self._access_token()
+                # Delete old metadata file
+                file_info = self._find_meta_file(token)
+                if file_info:
+                    self._delete_file(token, file_info["id"])
+                # Rebuild metadata with current files
+                files = self._list_all_backups(token)
+                meta = {}
+                for f in files:
+                    name = f.get("name", "")
+                    if name and name != BACKUP_META_NAME:
+                        from datetime import datetime
+                        mt = f.get("modifiedTime", "")
+                        if mt:
+                            try:
+                                dt = datetime.fromisoformat(mt.replace("Z", "+00:00"))
+                                meta[name] = dt.strftime("Snippets of %d %B %Y at %I:%M %p")
+                            except Exception:
+                                meta[name] = "Latest Backup" if name == BACKUP_FILE_NAME else "Backup"
+                        else:
+                            meta[name] = "Latest Backup" if name == BACKUP_FILE_NAME else "Backup"
+                # Save the rebuilt metadata
+                self._save_meta(token, meta)
+                self.statusMessage.emit(f"Names reset. {len(meta)} backup(s) now have default names.")
+            except Exception as e:
+                self.statusMessage.emit(f"Clear error: {e}")
             finally:
                 self._set_busy(False)
         threading.Thread(target=_worker, daemon=True).start()
