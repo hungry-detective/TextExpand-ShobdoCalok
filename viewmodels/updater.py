@@ -314,21 +314,7 @@ class UpdaterViewModel(QObject):
                 probe.close()
 
                 if total_size == 0:
-                    # Fallback: try single-threaded (will get size from response)
                     return self._download_single_thread(url, dest)
-
-                existing_size = 0
-                if os.path.exists(dest):
-                    existing_size = os.path.getsize(dest)
-
-                # Already complete
-                if existing_size >= total_size:
-                    if self._validate_zip(dest):
-                        self._set_progress(1.0)
-                        self._emit_status("File already downloaded.")
-                        return True
-                    else:
-                        existing_size = 0  # Corrupt — re-download
 
                 # Single-threaded fallback if no Range support
                 if not accept_ranges:
@@ -346,10 +332,19 @@ class UpdaterViewModel(QObject):
                 tmp_dir = dest + ".chunks"
                 os.makedirs(tmp_dir, exist_ok=True)
 
+                # Count already-downloaded bytes from existing chunk files
+                existing_chunk_bytes = 0
+                for i in range(len(ranges)):
+                    chunk_file = os.path.join(tmp_dir, str(i))
+                    if os.path.exists(chunk_file):
+                        existing_chunk_bytes += os.path.getsize(chunk_file)
+
                 self._emit_status(f"Downloading with {len(ranges)} connections…")
-                done_bytes = existing_size
+                done_bytes = existing_chunk_bytes
                 done_lock = threading.Lock()
                 t0 = time.monotonic()
+                last_report_time = t0
+                last_report_bytes = existing_chunk_bytes
 
                 def download_chunk(chunk_idx, chunk_start, chunk_end):
                     nonlocal done_bytes
@@ -386,19 +381,22 @@ class UpdaterViewModel(QObject):
                     ]
 
                     def report_progress():
-                        last_done = 0
-                        speed_smooth = 0.0
+                        nonlocal last_report_time, last_report_bytes
                         while not all(f.done() for f in futures):
-                            elapsed = time.monotonic() - t0
+                            now = time.monotonic()
                             with done_lock:
                                 current_done = done_bytes
-                            instant_speed = (current_done - last_done) / max(elapsed, 0.01) / (1 << 20)
-                            speed_smooth = speed_smooth * 0.7 + instant_speed * 0.3
-                            last_done = current_done
+                            dt = now - last_report_time
+                            if dt > 0.3:
+                                speed = (current_done - last_report_bytes) / dt / (1 << 20)
+                                last_report_time = now
+                                last_report_bytes = current_done
+                            else:
+                                speed = 0
                             self._set_progress(min(current_done / total_size, 0.99))
                             self._emit_status(
                                 f"Downloading… {current_done >> 20}/{total_size >> 20} MB "
-                                f"({speed_smooth:.1f} MB/s)"
+                                f"({speed:.1f} MB/s)"
                             )
                             time.sleep(0.5)
                     reporter = threading.Thread(target=report_progress, daemon=True)

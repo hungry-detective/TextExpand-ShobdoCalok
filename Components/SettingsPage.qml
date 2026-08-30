@@ -182,7 +182,7 @@ Item {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: 48
-                        Layout.rightMargin: 12
+                        Layout.rightMargin: 0
                         height: 20
                         visible: updaterViewModel.downloading || updaterViewModel.applying
                         radius: 10
@@ -199,7 +199,7 @@ Item {
                             anchors.centerIn: parent
                             text: updaterViewModel.applying
                                  ? "Applying update…"
-                                 : "Downloading… " + Math.round(updaterViewModel.progress * 100) + "%"
+                                 : (updaterViewModel.statusMessage_text || ("Downloading… " + Math.round(updaterViewModel.progress * 100) + "%"))
                             font.family: "Inter"; font.pixelSize: 10; font.bold: true
                             color: AppTheme.textPrimary
                         }
