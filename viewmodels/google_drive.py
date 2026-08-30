@@ -30,6 +30,8 @@ SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
 DRIVE_ABOUT_URL = "https://www.googleapis.com/drive/v3/about"
 BACKUP_FILE_NAME = "ShobdoCalok.snippets.json"
+BACKUP_HISTORY_PREFIX = "ShobdoCalok-backup-"
+MAX_BACKUPS = 10  # Keep up to 10 timestamped backups
 
 
 class _RedirectHandler(BaseHTTPRequestHandler):
@@ -84,6 +86,7 @@ class GoogleDriveViewModel(QObject):
     busyChanged        = Signal(bool)
     statusMessage      = Signal(str)      # transient toast message
     restoreComplete    = Signal()         # emitted after restore to refresh UI
+    backupListReady    = Signal(list)     # list of {id, name, modifiedTime, label}
 
     def __init__(self, data_dir: str, parent=None):
         super().__init__(parent)
@@ -350,6 +353,84 @@ class GoogleDriveViewModel(QObject):
         files = resp.json().get("files", [])
         return files[0] if files else None
 
+    def _list_all_backups(self, token: str) -> list:
+        """List all backup files (main + timestamped history)."""
+        import requests
+        url = DRIVE_FILES_URL
+        params = {
+            "q": f"name contains '{BACKUP_HISTORY_PREFIX}' and trashed=false",
+            "spaces": "appDataFolder",
+            "fields": "files(id, name, modifiedTime)",
+            "pageSize": "50",
+            "orderBy": "modifiedTime desc",
+        }
+        resp = requests.get(
+            url, params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return []
+        history = resp.json().get("files", [])
+        # Also include the main backup file
+        main = self._find_backup_file(token)
+        if main:
+            history.insert(0, main)
+        return history
+
+    def _rename_backup(self, token: str, file_id: str, old_name: str):
+        """Rename a backup file to add a timestamp suffix."""
+        import requests
+        from datetime import datetime
+        dt = datetime.now().strftime("%Y-%m-%d-%H-%M")
+        new_name = f"{BACKUP_HISTORY_PREFIX}{dt}.json"
+        url = f"{DRIVE_FILES_URL}/{file_id}"
+        resp = requests.patch(
+            url,
+            json={"name": new_name},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        # If rename fails (e.g., name collision), try with seconds suffix
+        if resp.status_code not in (200, 201):
+            new_name = f"{BACKUP_HISTORY_PREFIX}{dt}-{random.randint(100,999)}.json"
+            requests.patch(
+                url, json={"name": new_name},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30,
+            )
+
+    def _delete_file(self, token: str, file_id: str):
+        """Delete a file from Drive."""
+        import requests
+        requests.delete(
+            f"{DRIVE_FILES_URL}/{file_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+
+    def _trim_backup_history(self, token: str):
+        """Keep only MAX_BACKUPS timestamped backups, delete oldest."""
+        import requests
+        params = {
+            "q": f"name contains '{BACKUP_HISTORY_PREFIX}' and trashed=false",
+            "spaces": "appDataFolder",
+            "fields": "files(id, name, modifiedTime)",
+            "pageSize": "50",
+            "orderBy": "modifiedTime desc",
+        }
+        resp = requests.get(
+            url=DRIVE_FILES_URL, params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            return
+        files = resp.json().get("files", [])
+        # Delete oldest if over limit
+        for f in files[MAX_BACKUPS:]:
+            self._delete_file(token, f["id"])
+
     def _sync_backup_status(self):
         """Query Drive for backup existence and update UI. Called after login."""
         try:
@@ -438,7 +519,12 @@ class GoogleDriveViewModel(QObject):
                 indent=2, ensure_ascii=False,
             )
             file_info = self._find_backup_file(token)
+            if file_info:
+                # Rename old backup with timestamp before overwriting
+                self._rename_backup(token, file_info["id"], BACKUP_FILE_NAME)
             self._upload(token, file_info["id"] if file_info else None, content)
+            # Trim history to keep only MAX_BACKUPS
+            self._trim_backup_history(token)
             stamp = time.strftime("%b %d, %Y %I:%M %p")
             self._set_last_backup(stamp)
             self.statusMessage.emit("Backup uploaded to Google Drive")
@@ -447,7 +533,7 @@ class GoogleDriveViewModel(QObject):
         finally:
             self._set_busy(False)
 
-    def _do_restore(self):
+    def _do_restore(self, file_id: str = None):
         try:
             self._set_busy(True)
             if not self._creds:
@@ -455,7 +541,11 @@ class GoogleDriveViewModel(QObject):
             if self._snippet_store is None:
                 raise RuntimeError("Snippet store not wired")
             token = self._access_token()
-            file_info = self._find_backup_file(token)
+            if file_id:
+                # Restore from specific backup
+                file_info = {"id": file_id, "modifiedTime": ""}
+            else:
+                file_info = self._find_backup_file(token)
             if not file_info:
                 raise RuntimeError("No backup found on Google Drive")
             content = self._download(token, file_info["id"])
@@ -536,3 +626,52 @@ class GoogleDriveViewModel(QObject):
     @Slot()
     def restore(self):
         threading.Thread(target=self._do_restore, daemon=True).start()
+
+    @Slot(str)
+    def restoreFromFile(self, file_id: str):
+        threading.Thread(target=self._do_restore, args=(file_id,), daemon=True).start()
+
+    @Slot()
+    def listBackups(self):
+        """List all available backups and emit backupListReady."""
+        def _worker():
+            try:
+                self._set_busy(True)
+                if not self._creds:
+                    self.backupListReady.emit([])
+                    return
+                token = self._access_token()
+                files = self._list_all_backups(token)
+                result = []
+                for f in files:
+                    name = f.get("name", "")
+                    mt = f.get("modifiedTime", "")
+                    # Create human-readable label
+                    if name == BACKUP_FILE_NAME:
+                        label = "Latest backup"
+                    elif name.startswith(BACKUP_HISTORY_PREFIX):
+                        # Extract date from filename
+                        dt_str = name.replace(BACKUP_HISTORY_PREFIX, "").replace(".json", "")
+                        label = f"Backup: {dt_str}"
+                    else:
+                        label = name
+                    # Format modifiedTime
+                    if mt:
+                        from datetime import datetime
+                        try:
+                            dt = datetime.fromisoformat(mt.replace("Z", "+00:00"))
+                            label += f" ({dt.strftime('%b %d, %Y %I:%M %p')})"
+                        except Exception:
+                            label += f" ({mt[:10]})"
+                    result.append({
+                        "id": f.get("id", ""),
+                        "name": name,
+                        "label": label,
+                    })
+                self.backupListReady.emit(result)
+            except Exception as e:
+                self.statusMessage.emit(f"Error listing backups: {e}")
+                self.backupListReady.emit([])
+            finally:
+                self._set_busy(False)
+        threading.Thread(target=_worker, daemon=True).start()

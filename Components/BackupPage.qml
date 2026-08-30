@@ -163,7 +163,7 @@ Item {
                                 enabled: !driveViewModel.busy
                                 opacity: enabled ? 1 : 0.5
                                 HoverHandler { id: backupHover }
-                                TapHandler { onTapped: driveViewModel.backup() }
+                                TapHandler { onTapped: backupConfirmDialog.open() }
                                 ColumnLayout {
                                     anchors.centerIn: parent; spacing: 1
                                     Text {
@@ -188,7 +188,7 @@ Item {
                                 enabled: !driveViewModel.busy
                                 opacity: enabled ? 1 : 0.5
                                 HoverHandler { id: restoreHover }
-                                TapHandler { onTapped: driveViewModel.restore() }
+                                TapHandler { onTapped: { driveViewModel.listBackups(); restorePicker.open() } }
                                 ColumnLayout {
                                     anchors.centerIn: parent; spacing: 1
                                     Text {
@@ -216,6 +216,123 @@ Item {
                 text: "Shobdo Calok  v" + (updaterViewModel ? updaterViewModel.currentVersion : "1.0.0")
                 font.family: "Inter"; font.pixelSize: 11
                 color: AppTheme.textSecondary; opacity: 0.5
+            }
+        }
+    }
+
+    // ── Confirmation dialog before backup ────────────────────────────────────
+    Dialog {
+        id: backupConfirmDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 380; height: contentHeight + 40
+        modal: true; dim: true; closePolicy: Popup.CloseOnEscape
+        background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
+        contentItem: ColumnLayout {
+            spacing: 16; anchors.margins: 20
+            Text {
+                text: "Overwrite Backup?"
+                font.family: "Inter"; font.pixelSize: 16; font.bold: true
+                color: AppTheme.textPrimary
+            }
+            Text {
+                text: "This will replace your existing backup on Google Drive. Your previous backup will be saved as a history copy, but to be safe, are you sure?"
+                font.family: "Inter"; font.pixelSize: 12
+                color: AppTheme.textSecondary; wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 10
+                Item { Layout.fillWidth: true }
+                Rectangle {
+                    width: 80; height: 32; radius: 8
+                    color: cancelHover.hovered ? AppTheme.hoverBg : "transparent"
+                    border.color: AppTheme.textSecondary; border.width: 1
+                    HoverHandler { id: cancelHover }
+                    TapHandler { onTapped: backupConfirmDialog.close() }
+                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary }
+                }
+                Rectangle {
+                    width: 100; height: 32; radius: 8
+                    color: confirmHover.hovered ? AppTheme.primaryHover : AppTheme.primary
+                    HoverHandler { id: confirmHover }
+                    TapHandler { onTapped: { backupConfirmDialog.close(); driveViewModel.backup() } }
+                    Text { anchors.centerIn: parent; text: "Yes, Backup"; font.family: "Inter"; font.pixelSize: 11; font.bold: true; color: "white" }
+                }
+            }
+        }
+    }
+
+    // ── Restore picker dialog ────────────────────────────────────────────────
+    Dialog {
+        id: restorePicker
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 420; height: Math.min(500, backupList.contentHeight + 120)
+        modal: true; dim: true; closePolicy: Popup.CloseOnEscape
+        background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
+        onOpened: { backupListModel.clear() }
+        contentItem: ColumnLayout {
+            spacing: 12; anchors.margins: 20
+            Text {
+                text: "Choose Backup to Restore"
+                font.family: "Inter"; font.pixelSize: 16; font.bold: true
+                color: AppTheme.textPrimary
+            }
+            Text {
+                text: "Select which backup you want to restore:"
+                font.family: "Inter"; font.pixelSize: 12
+                color: AppTheme.textSecondary
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
+            ListView {
+                id: backupList
+                Layout.fillWidth: true; Layout.fillHeight: true
+                clip: true; spacing: 4
+                model: ListModel { id: backupListModel }
+                delegate: Rectangle {
+                    Layout.fillWidth: true; height: 44; radius: 8
+                    color: itemHover.hovered ? AppTheme.primaryLight : "transparent"
+                    HoverHandler { id: itemHover }
+                    RowLayout {
+                        anchors.fill: parent; anchors.margins: 8; spacing: 8
+                        Text {
+                            text: "history"
+                            font.family: "Material Symbols Outlined"; font.pixelSize: 18
+                            color: index === 0 ? AppTheme.primary : AppTheme.textSecondary
+                        }
+                        Text {
+                            text: model.label
+                            font.family: "Inter"; font.pixelSize: 12
+                            color: AppTheme.textPrimary; elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                    }
+                    TapHandler {
+                        onTapped: {
+                            restorePicker.close()
+                            if (index === 0) {
+                                // Latest backup - use default restore
+                                driveViewModel.restore()
+                            } else {
+                                // Historical backup - restore by file ID
+                                driveViewModel.restoreFromFile(model.id)
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Rectangle {
+                    width: 80; height: 32; radius: 8
+                    color: restoreCancelHover.hovered ? AppTheme.hoverBg : "transparent"
+                    border.color: AppTheme.textSecondary; border.width: 1
+                    HoverHandler { id: restoreCancelHover }
+                    TapHandler { onTapped: restorePicker.close() }
+                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary }
+                }
             }
         }
     }
@@ -261,6 +378,16 @@ Item {
         }
         function onLoginStateChanged(loggedIn) {
             backupRoot._toast(loggedIn ? "Signed in" : "Signed out")
+        }
+        function onBackupListReady(list) {
+            backupListModel.clear()
+            for (var i = 0; i < list.length; i++) {
+                backupListModel.append({
+                    "id": list[i].id,
+                    "name": list[i].name,
+                    "label": list[i].label
+                })
+            }
         }
     }
 
