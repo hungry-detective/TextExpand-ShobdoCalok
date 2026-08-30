@@ -340,7 +340,7 @@ class GoogleDriveViewModel(QObject):
         params = {
             "q": f"name='{BACKUP_FILE_NAME}' and trashed=false",
             "spaces": "appDataFolder",
-            "fields": "files(id, modifiedTime)",
+            "fields": "files(id, name, modifiedTime)",
             "pageSize": "1",
         }
         resp = requests.get(
@@ -360,7 +360,7 @@ class GoogleDriveViewModel(QObject):
         params = {
             "q": f"name='{BACKUP_META_NAME}' and trashed=false",
             "spaces": "appDataFolder",
-            "fields": "files(id, modifiedTime)",
+            "fields": "files(id, name, modifiedTime)",
             "pageSize": "1",
         }
         resp = requests.get(

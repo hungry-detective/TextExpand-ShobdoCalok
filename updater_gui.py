@@ -87,6 +87,8 @@ class CopyWorker(QThread):
 
             copied = 0
             errors = []
+            # Track files that couldn't be copied because they're locked (will retry after exit)
+            deferred_files = []
             for root, dirs, files in os.walk(self.src_dir):
                 dirs[:] = [d for d in dirs if d != "AppData"]
 
@@ -99,24 +101,35 @@ class CopyWorker(QThread):
                     src_file = os.path.join(root, fname)
                     dst_file = os.path.join(dst_sub, fname)
 
+                    # Special handling: if we're trying to copy over the running updater,
+                    # copy to a .new file instead — the main app will rename it on next start
+                    is_updater_self = (
+                        fname.lower() == "updater.exe" and
+                        os.path.normpath(dst_file) == os.path.normpath(sys.executable)
+                    )
+                    if is_updater_self:
+                        dst_file = dst_file + ".new"
+                        _log(f"Deferring self-update of updater: copying to {dst_file}")
+
                     # Try copying with retries for locked files
                     success = False
                     last_error = ""
-                    for attempt in range(5):
+                    for attempt in range(3):
                         try:
                             shutil.copy2(src_file, dst_file)
                             success = True
                             break
                         except PermissionError as e:
                             last_error = str(e)
-                            time.sleep(1)
+                            time.sleep(0.5)
                         except Exception as e:
                             last_error = str(e)
                             errors.append(f"{fname}: {e}")
                             break
 
                     if not success:
-                        errors.append(f"{fname}: locked after 5 retries - {last_error}")
+                        errors.append(f"{fname}: locked after 3 retries - {last_error}")
+                        deferred_files.append((src_file, dst_file))
 
                     copied += 1
                     pct = 10 + int((copied / total_files) * 80)
@@ -130,6 +143,18 @@ class CopyWorker(QThread):
             else:
                 self.progress.emit(95, f"All {copied} files copied!")
                 _log(f"Copy completed successfully: {copied} files")
+
+            # Write deferred files list for the main app to handle on next launch
+            if deferred_files:
+                deferred_log = os.path.join(self.dst_dir, "AppData", "deferred_updates.txt")
+                try:
+                    os.makedirs(os.path.dirname(deferred_log), exist_ok=True)
+                    with open(deferred_log, "w", encoding="utf-8") as f:
+                        for src, dst in deferred_files:
+                            f.write(f"{src}|{dst}\n")
+                    _log(f"Wrote {len(deferred_files)} deferred file(s) to {deferred_log}")
+                except Exception as e:
+                    _log(f"Failed to write deferred updates log: {e}")
 
             time.sleep(0.5)
             self.finished.emit(True, f"Update complete! {copied} files installed.")

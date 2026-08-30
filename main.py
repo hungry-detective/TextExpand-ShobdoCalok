@@ -137,6 +137,47 @@ if __name__ == "__main__":
     data_dir = os.path.join(_app_root, "AppData")
     os.makedirs(data_dir, exist_ok=True)
 
+    # ── Apply deferred updates from previous run (e.g., self-update of Updater.exe)
+    _deferred_file = os.path.join(data_dir, "deferred_updates.txt")
+    if os.path.exists(_deferred_file):
+        try:
+            applied = 0
+            with open(_deferred_file, "r", encoding="utf-8") as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if not _line or "|" not in _line:
+                        continue
+                    _src, _dst = _line.split("|", 1)
+                    if not os.path.exists(_src):
+                        continue
+                    # Try to copy over (the old file should be unlocked now)
+                    try:
+                        # Remove .new suffix if present and replace the target
+                        if _dst.endswith(".new"):
+                            _real_dst = _dst[:-4]
+                        else:
+                            _real_dst = _dst
+                        # Remove old file if it exists
+                        if os.path.exists(_real_dst):
+                            os.remove(_real_dst)
+                        shutil.copy2(_src, _real_dst)
+                        # Remove the .new file
+                        if _dst != _real_dst and os.path.exists(_dst):
+                            os.remove(_dst)
+                        applied += 1
+                        print(f"Applied deferred update: {_real_dst}")
+                    except Exception as _e:
+                        print(f"Failed to apply deferred update {_dst}: {_e}")
+            if applied > 0:
+                print(f"Applied {applied} deferred update(s)")
+        except Exception as _e:
+            print(f"Error processing deferred updates: {_e}")
+        finally:
+            try:
+                os.remove(_deferred_file)
+            except Exception:
+                pass
+
     # ── Backend: Snippet store + expansion engine ──────────────────────────────
     snippet_vm = vm_main.SnippetViewModel(data_dir=data_dir)
 
