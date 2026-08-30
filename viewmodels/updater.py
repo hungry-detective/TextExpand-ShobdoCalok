@@ -704,7 +704,12 @@ class UpdaterViewModel(QObject):
         batch_script = f"""@echo off
 setlocal enabledelayedexpansion
 title ShobdoCalok Updater
+mode con: cols=60 lines=24
 color 0B
+
+REM Center the window
+powershell -Command "$h=Get-Host;$w=$h.UI.RawUI.WindowSize;$b=$h.UI.RawUI.BufferSize;$b.Width=60;$h.UI.RawUI.BufferSize=$b;$x=[int](([System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Width-$w.Width)/2);$y=[int](([System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Height-$w.Height)/2);$h.UI.RawUI.WindowPosition=New-Object System.Management.Automation.Host.Coordinates($x,$y)" 2>nul
+
 cls
 echo.
 echo  ==========================================
@@ -735,29 +740,31 @@ echo.
 echo  [2/4] Checking update files...
 echo [2/4] Checking source... >> "%LOG%"
 set "LAUNCH_EXE="
-if exist "%NEW%\\ShobdoCalok.exe" (
-    echo  [2/4] Found ShobdoCalok.exe ^(packaged^)
-    echo [2/4] Source OK ^(packaged^) >> "%LOG%"
-    set "LAUNCH_EXE=1"
-)
-if "!LAUNCH_EXE!"=="" if exist "%NEW%\\main.py" (
-    echo  [2/4] Found main.py ^(source^)
-    echo [2/4] Source OK ^(source mode^) >> "%LOG%"
-    set "LAUNCH_EXE=0"
-)
-if "!LAUNCH_EXE!"=="" (
-    echo  [2/4] ERROR: No update files found in:
-    echo  %NEW%
-    echo  Contents of extracted folder:
-    dir "%NEW%" /b 2>nul
-    echo [2/4] ERROR: No app found in: %NEW% >> "%LOG%"
-    dir "%NEW%" /b >> "%LOG%" 2>nul
-    echo.
-    echo  Press any key to close...
-    pause >nul
-    goto cleanup
-)
+if exist "%NEW%\\ShobdoCalok.exe" set "LAUNCH_EXE=1"
+if "!LAUNCH_EXE!"=="" if exist "%NEW%\\main.py" set "LAUNCH_EXE=0"
+if "!LAUNCH_EXE!"=="" goto no_files
 
+if "!LAUNCH_EXE!"=="1" (
+    echo  [2/4] Found: ShobdoCalok.exe
+    echo [2/4] Source OK ^(packaged^) >> "%LOG%"
+) else (
+    echo  [2/4] Found: main.py
+    echo [2/4] Source OK ^(source mode^) >> "%LOG%"
+)
+goto copy_files
+
+:no_files
+echo  [2/4] ERROR: No update files found!
+echo  Extracted folder contents:
+dir "%NEW%" /b 2>nul
+echo [2/4] ERROR: No app found in: %NEW% >> "%LOG%"
+dir "%NEW%" /b >> "%LOG%" 2>nul
+echo.
+echo  Press any key to close...
+pause >nul
+goto cleanup
+
+:copy_files
 echo.
 echo  [3/4] Installing update...
 echo  Copying new files (this may take a moment)...
@@ -773,20 +780,14 @@ if !RC! GEQ 8 (
     echo  [3/4] xcopy completed.
 )
 
-:start_app
 echo.
 echo  [4/4] Starting ShobdoCalok...
 echo [4/4] Starting app... >> "%LOG%"
 if "!LAUNCH_EXE!"=="1" (
     start "" "%APP%\\ShobdoCalok.exe"
-    goto app_started
-)
-if "!LAUNCH_EXE!"=="0" (
+) else (
     start "" /D "%APP%" python main.py
-    goto app_started
 )
-start "" "%APP%\\ShobdoCalok.exe"
-:app_started
 echo  [4/4] App started!
 echo [4/4] App started. >> "%LOG%"
 

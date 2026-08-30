@@ -506,7 +506,7 @@ class GoogleDriveViewModel(QObject):
             raise RuntimeError(f"Download failed: {resp.status_code}")
         return resp.text
 
-    def _do_backup(self):
+    def _do_backup(self, name: str = ""):
         try:
             self._set_busy(True)
             if not self._creds:
@@ -622,6 +622,10 @@ class GoogleDriveViewModel(QObject):
     @Slot()
     def backup(self):
         threading.Thread(target=self._do_backup, daemon=True).start()
+
+    @Slot(str)
+    def backupWithName(self, name: str):
+        threading.Thread(target=self._do_backup, args=(name,), daemon=True).start()
 
     @Slot()
     def restore(self):

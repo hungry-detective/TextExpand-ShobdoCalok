@@ -163,7 +163,7 @@ Item {
                                 enabled: !driveViewModel.busy
                                 opacity: enabled ? 1 : 0.5
                                 HoverHandler { id: backupHover }
-                                TapHandler { onTapped: backupConfirmDialog.open() }
+                                TapHandler { onTapped: { backupNameInput.text = "Snippets " + Qt.formatDateTime(new Date(), "dd MMMM yyyy"); backupOptionsDialog.open() } }
                                 ColumnLayout {
                                     anchors.centerIn: parent; spacing: 1
                                     Text {
@@ -222,77 +222,116 @@ Item {
 
     // ── Backup options dialog ────────────────────────────────────────────────
     Dialog {
-        id: backupConfirmDialog
+        id: backupOptionsDialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400; height: 340
+        width: 420; height: 440
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
+        onOpened: { driveViewModel.listBackups() }
         contentItem: ColumnLayout {
             spacing: 12; anchors.margins: 20
 
             Text {
-                text: "Backup Options"
+                text: "Backup to Google Drive"
                 font.family: "Inter"; font.pixelSize: 16; font.bold: true
                 color: AppTheme.textPrimary
             }
+
+            // Backup name input
             Text {
-                text: "Choose how to save your snippets to Google Drive:"
-                font.family: "Inter"; font.pixelSize: 12
-                color: AppTheme.textSecondary; wrapMode: Text.Wrap; Layout.fillWidth: true
+                text: "Backup Name"
+                font.family: "Inter"; font.pixelSize: 11; font.bold: true
+                color: AppTheme.textSecondary
             }
+            Rectangle {
+                Layout.fillWidth: true; height: 40; radius: 10
+                color: AppTheme.isDark ? "#1a1d23" : "#f8fafc"
+                border.color: backupNameInput.activeFocus ? AppTheme.primary : AppTheme.hoverBg; border.width: 1
+                TextInput {
+                    id: backupNameInput
+                    anchors.fill: parent; anchors.margins: 10
+                    font.family: "Inter"; font.pixelSize: 13
+                    color: AppTheme.textPrimary
+                    clip: true
+                    selectByMouse: true
+                    Keys.onReturnPressed: createBackupBtn.clicked()
+                }
+            }
+
             Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
 
-            // Option 1: Create New (keeps old as history)
+            // Create backup button
             Rectangle {
-                Layout.fillWidth: true; height: 56; radius: 10
-                color: opt1Hover.hovered ? AppTheme.primaryLight : "transparent"
-                border.color: AppTheme.primary; border.width: 1
-                HoverHandler { id: opt1Hover }
+                Layout.fillWidth: true; height: 44; radius: 10
+                color: createBackupHover.hovered ? AppTheme.primaryHover : AppTheme.primary
+                HoverHandler { id: createBackupHover }
                 MouseArea {
                     anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        backupConfirmDialog.close()
-                        driveViewModel.backup()
+                        backupOptionsDialog.close()
+                        driveViewModel.backupWithName(backupNameInput.text)
                     }
                 }
                 RowLayout {
                     anchors.fill: parent; anchors.margins: 10; spacing: 10
-                    Rectangle {
-                        width: 32; height: 32; radius: 8
-                        color: AppTheme.primaryLight
-                        Text { anchors.centerIn: parent; text: "add"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: AppTheme.primary }
-                    }
-                    ColumnLayout { spacing: 2
-                        Text { text: "Create New Backup"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: AppTheme.textPrimary }
-                        Text { text: "Saves current backup, old one kept as history"; font.family: "Inter"; font.pixelSize: 10; color: AppTheme.textSecondary }
-                    }
+                    Text { anchors.left: parent.left; anchors.leftMargin: 8; text: "cloud_upload"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "white" }
+                    Text { text: "Create Backup"; font.family: "Inter"; font.pixelSize: 13; font.bold: true; color: "white" }
                 }
             }
 
-            // Option 2: Delete old backups
+            // Delete old backups
             Rectangle {
-                Layout.fillWidth: true; height: 56; radius: 10
-                color: opt2Hover.hovered ? "#fef2f2" : "transparent"
+                Layout.fillWidth: true; height: 44; radius: 10
+                color: deleteBackupHover.hovered ? "#fef2f2" : "transparent"
                 border.color: "#ef4444"; border.width: 1
-                HoverHandler { id: opt2Hover }
+                HoverHandler { id: deleteBackupHover }
                 MouseArea {
                     anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        backupConfirmDialog.close()
-                        driveViewModel.deleteOldBackups()
-                    }
+                    onClicked: { backupOptionsDialog.close(); driveViewModel.deleteOldBackups() }
                 }
                 RowLayout {
                     anchors.fill: parent; anchors.margins: 10; spacing: 10
-                    Rectangle {
-                        width: 32; height: 32; radius: 8
-                        color: "#fef2f2"
-                        Text { anchors.centerIn: parent; text: "delete_sweep"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "#ef4444" }
-                    }
-                    ColumnLayout { spacing: 2
-                        Text { text: "Delete Old Backups"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: "#ef4444" }
-                        Text { text: "Remove all history copies, keep only latest"; font.family: "Inter"; font.pixelSize: 10; color: AppTheme.textSecondary }
+                    Text { anchors.left: parent.left; anchors.leftMargin: 8; text: "delete_sweep"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "#ef4444" }
+                    Text { text: "Delete Old Backups"; font.family: "Inter"; font.pixelSize: 13; font.bold: true; color: "#ef4444" }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
+
+            // Existing backups list
+            Text {
+                text: "Existing Backups"
+                font.family: "Inter"; font.pixelSize: 11; font.bold: true
+                color: AppTheme.textSecondary
+            }
+            Rectangle {
+                Layout.fillWidth: true; height: 120; radius: 10
+                color: AppTheme.isDark ? "#1a1d23" : "#f8fafc"
+                border.color: AppTheme.hoverBg; border.width: 1
+                clip: true
+                ListView {
+                    id: existingBackupsList
+                    anchors.fill: parent; anchors.margins: 6
+                    clip: true; spacing: 3
+                    model: ListModel { id: existingBackupsModel }
+                    delegate: Rectangle {
+                        width: existingBackupsList.width; height: 30; radius: 6
+                        color: "transparent"
+                        RowLayout {
+                            anchors.fill: parent; anchors.margins: 4; spacing: 6
+                            Text {
+                                text: model.name === "ShobdoCalok.snippets.json" ? "cloud_done" : "history"
+                                font.family: "Material Symbols Outlined"; font.pixelSize: 14
+                                color: model.name === "ShobdoCalok.snippets.json" ? AppTheme.primary : AppTheme.textSecondary
+                            }
+                            Text {
+                                text: model.label
+                                font.family: "Inter"; font.pixelSize: 11
+                                color: AppTheme.textPrimary; elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
                     }
                 }
             }
@@ -307,7 +346,7 @@ Item {
                     color: backupCancelHover.hovered ? AppTheme.hoverBg : "transparent"
                     border.color: AppTheme.textSecondary; border.width: 1
                     HoverHandler { id: backupCancelHover }
-                    TapHandler { onTapped: backupConfirmDialog.close() }
+                    TapHandler { onTapped: backupOptionsDialog.close() }
                     Text { anchors.centerIn: parent; text: "Cancel"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary }
                 }
             }
@@ -319,10 +358,10 @@ Item {
         id: restorePicker
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 420; height: Math.min(500, backupList.contentHeight + 120)
+        width: 440; height: 420
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
-        onOpened: { backupListModel.clear(); driveViewModel.listBackups() }
+        onOpened: { restoreListModel.clear(); driveViewModel.listBackups() }
         contentItem: ColumnLayout {
             spacing: 12; anchors.margins: 20
             Text {
@@ -336,77 +375,79 @@ Item {
                 color: AppTheme.textSecondary
             }
             Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
-            ListView {
-                id: backupList
-                Layout.fillWidth: true; Layout.fillHeight: true
-                clip: true; spacing: 4
-                model: ListModel { id: backupListModel }
-                delegate: Rectangle {
-                    id: backupItem
-                    width: backupList.width; height: 48; radius: 8
-                    color: itemHover.hovered ? AppTheme.primaryLight : "transparent"
-                    property string fileId: model.id
-                    property int itemIndex: index
-
-                    HoverHandler { id: itemHover }
-
-                    RowLayout {
-                        anchors.fill: parent; anchors.margins: 10; spacing: 10
-                        Rectangle {
-                            width: 32; height: 32; radius: 8
-                            color: backupItem.itemIndex === 0 ? AppTheme.primaryLight : (AppTheme.isDark ? "#2a2d35" : "#f1f5f9")
-                            Text {
-                                anchors.centerIn: parent
-                                text: backupItem.itemIndex === 0 ? "cloud_done" : "history"
-                                font.family: "Material Symbols Outlined"; font.pixelSize: 16
-                                color: backupItem.itemIndex === 0 ? AppTheme.primary : AppTheme.textSecondary
+            Rectangle {
+                Layout.fillWidth: true; Layout.fillHeight: true; radius: 10
+                color: AppTheme.isDark ? "#1a1d23" : "#f8fafc"
+                border.color: AppTheme.hoverBg; border.width: 1
+                clip: true
+                ListView {
+                    id: restoreList
+                    anchors.fill: parent; anchors.margins: 6
+                    clip: true; spacing: 4
+                    model: ListModel { id: restoreListModel }
+                    delegate: Rectangle {
+                        id: restoreItem
+                        width: restoreList.width; height: 50; radius: 8
+                        color: restoreItemHover.hovered ? AppTheme.primaryLight : "transparent"
+                        property string fileId: model.fileId
+                        property int itemIndex: index
+                        HoverHandler { id: restoreItemHover }
+                        RowLayout {
+                            anchors.fill: parent; anchors.margins: 8; spacing: 10
+                            Rectangle {
+                                width: 34; height: 34; radius: 8
+                                color: restoreItem.itemIndex === 0 ? AppTheme.primaryLight : (AppTheme.isDark ? "#2a2d35" : "#f1f5f9")
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: restoreItem.itemIndex === 0 ? "cloud_done" : "history"
+                                    font.family: "Material Symbols Outlined"; font.pixelSize: 16
+                                    color: restoreItem.itemIndex === 0 ? AppTheme.primary : AppTheme.textSecondary
+                                }
                             }
-                        }
-                        ColumnLayout {
-                            Layout.fillWidth: true; spacing: 2
-                            Text {
-                                text: backupItem.itemIndex === 0 ? "Latest Backup" : "Previous Backup"
-                                font.family: "Inter"; font.pixelSize: 12; font.bold: true
-                                color: AppTheme.textPrimary
+                            ColumnLayout {
+                                Layout.fillWidth: true; spacing: 2
+                                Text {
+                                    text: restoreItem.itemIndex === 0 ? "Latest Backup" : "Previous Backup"
+                                    font.family: "Inter"; font.pixelSize: 12; font.bold: true
+                                    color: AppTheme.textPrimary
+                                }
+                                Text {
+                                    text: model.label
+                                    font.family: "Inter"; font.pixelSize: 10
+                                    color: AppTheme.textSecondary; elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
                             }
-                            Text {
-                                text: model.label
-                                font.family: "Inter"; font.pixelSize: 10
-                                color: AppTheme.textSecondary; elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                        }
-                        Rectangle {
-                            width: 60; height: 26; radius: 6
-                            color: restoreItemHover.hovered ? AppTheme.primaryHover : AppTheme.primary
-                            HoverHandler { id: restoreItemHover }
-                            Text {
-                                anchors.centerIn: parent; text: "RESTORE"
-                                font.family: "Inter"; font.pixelSize: 9; font.bold: true; color: "white"
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    restorePicker.close()
-                                    if (backupItem.itemIndex === 0) {
-                                        driveViewModel.restore()
-                                    } else {
-                                        driveViewModel.restoreFromFile(backupItem.fileId)
+                            Rectangle {
+                                width: 70; height: 28; radius: 7
+                                color: restoreBtnItemHover.hovered ? AppTheme.primaryHover : AppTheme.primary
+                                HoverHandler { id: restoreBtnItemHover }
+                                Text {
+                                    anchors.centerIn: parent; text: "RESTORE"
+                                    font.family: "Inter"; font.pixelSize: 9; font.bold: true; color: "white"
+                                }
+                                MouseArea {
+                                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        restorePicker.close()
+                                        if (restoreItem.itemIndex === 0) {
+                                            driveViewModel.restore()
+                                        } else {
+                                            driveViewModel.restoreFromFile(restoreItem.fileId)
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            restorePicker.close()
-                            if (backupItem.itemIndex === 0) {
-                                driveViewModel.restore()
-                            } else {
-                                driveViewModel.restoreFromFile(backupItem.fileId)
+                        MouseArea {
+                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                restorePicker.close()
+                                if (restoreItem.itemIndex === 0) {
+                                    driveViewModel.restore()
+                                } else {
+                                    driveViewModel.restoreFromFile(restoreItem.fileId)
+                                }
                             }
                         }
                     }
@@ -471,10 +512,15 @@ Item {
             backupRoot._toast(loggedIn ? "Signed in" : "Signed out")
         }
         function onBackupListReady(list) {
-            backupListModel.clear()
+            restoreListModel.clear()
+            existingBackupsModel.clear()
             for (var i = 0; i < list.length; i++) {
-                backupListModel.append({
-                    "id": list[i].id,
+                restoreListModel.append({
+                    "fileId": list[i].id,
+                    "name": list[i].name,
+                    "label": list[i].label
+                })
+                existingBackupsModel.append({
                     "name": list[i].name,
                     "label": list[i].label
                 })
@@ -497,7 +543,6 @@ Item {
         Layout.fillWidth: true; height: 60; radius: 14
         color: AppTheme.surface
 
-        // 1. Icon Section (Locked to left: 12px)
         Rectangle {
             id: iconRect
             width: 32; height: 32; radius: 8
@@ -515,7 +560,6 @@ Item {
             }
         }
 
-        // 2. Text Column (FORCED VERTICAL ALIGNMENT AT 48px)
         ColumnLayout {
             id: textCol
             anchors.left: parent.left
@@ -542,7 +586,6 @@ Item {
             }
         }
 
-        // 3. Toggle / Button Section (Locked to right)
         Item {
             id: toggleItem
             width: rowRoot.isButton ? 90 : 50
