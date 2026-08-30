@@ -449,8 +449,8 @@ class GoogleDriveViewModel(QObject):
             history.insert(0, main)
         return history
 
-    def _rename_backup(self, token: str, file_id: str, old_name: str):
-        """Rename a backup file to add a timestamp suffix."""
+    def _rename_backup(self, token: str, file_id: str, old_name: str) -> str:
+        """Rename a backup file to add a timestamp suffix. Returns actual new filename."""
         import requests
         from datetime import datetime
         dt = datetime.now().strftime("%Y-%m-%d-%H-%M")
@@ -470,6 +470,7 @@ class GoogleDriveViewModel(QObject):
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=30,
             )
+        return new_name
 
     def _delete_file(self, token: str, file_id: str):
         """Delete a file from Drive."""
@@ -592,19 +593,19 @@ class GoogleDriveViewModel(QObject):
             file_info = self._find_backup_file(token)
             if file_info:
                 # Rename old backup with timestamp before overwriting
-                self._rename_backup(token, file_info["id"], BACKUP_FILE_NAME)
+                actual_name = self._rename_backup(token, file_info["id"], BACKUP_FILE_NAME)
                 # Also update meta to keep history name
-                if name:
-                    meta = self._load_meta(token)
-                    old_dt = time.strftime("%Y-%m-%d-%H-%M")
-                    meta[f"{BACKUP_HISTORY_PREFIX}{old_dt}.json"] = name
-                    self._save_meta(token, meta)
-            self._upload(token, file_info["id"] if file_info else None, content)
-            # Save backup name in metadata
-            if name:
                 meta = self._load_meta(token)
-                meta[BACKUP_FILE_NAME] = name
+                if name:
+                    meta[actual_name] = name
+                else:
+                    meta[actual_name] = time.strftime("%b %d, %Y %I:%M %p")
                 self._save_meta(token, meta)
+            self._upload(token, file_info["id"] if file_info else None, content)
+            # Save backup name in metadata (always, even without user name)
+            meta = self._load_meta(token)
+            meta[BACKUP_FILE_NAME] = name if name else time.strftime("%b %d, %Y %I:%M %p")
+            self._save_meta(token, meta)
             # Trim history to keep only MAX_BACKUPS
             self._trim_backup_history(token)
             stamp = time.strftime("%b %d, %Y %I:%M %p")
