@@ -48,7 +48,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "dist/ShobdoCalok" -Force
-          Copy-Item "dist/ShobdoCalok_updater.exe" "dist/ShobdoCalok/ShobdoCalok_updater.exe" -Force
+          Copy-Item "dist/Updater.exe" "dist/ShobdoCalok/Updater.exe" -Force
 
       - name: Build portable app
         run: pyinstaller --noconfirm --clean ShobdoCalok.spec

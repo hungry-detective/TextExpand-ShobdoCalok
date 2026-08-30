@@ -218,6 +218,33 @@ class UpdaterViewModel(QObject):
         except Exception:
             pass
 
+    def _write_update_log(self, message: str, **kwargs):
+        """Write a debug log entry to update_debug.log in AppData."""
+        try:
+            log_path = os.path.join(self._data_dir, "update_debug.log")
+            from version import APP_VERSION
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            lines = [
+                f"\n{'='*70}",
+                f"[{timestamp}] v{APP_VERSION}",
+                f"Message: {message}",
+            ]
+            for k, v in kwargs.items():
+                # Truncate long values
+                sv = str(v)
+                if len(sv) > 500:
+                    sv = sv[:500] + "..."
+                lines.append(f"{k}: {sv}")
+            lines.append(f"Python: {sys.version}")
+            lines.append(f"Frozen: {getattr(sys, 'frozen', False)}")
+            lines.append(f"App root: {self._app_root}")
+            lines.append(f"Update dir: {self._update_dir}")
+            lines.append(f"{'='*70}\n")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+        except Exception as e:
+            print(f"Failed to write update log: {e}")
+
     def _validate_zip(self, path: str) -> bool:
         """Check ZIP exists, has reasonable size, and is not corrupt."""
         if not os.path.exists(path):
@@ -620,6 +647,15 @@ class UpdaterViewModel(QObject):
                 self._emit_status("No update asset found to download.")
                 return
 
+            # Log the start of the update
+            from version import APP_VERSION
+            self._write_update_log(
+                f"Starting update from v{APP_VERSION}",
+                asset_url=self._asset_url,
+                asset_name=self._asset_name,
+                zip_path=self._cached_zip_path,
+            )
+
             os.makedirs(self._update_dir, exist_ok=True)
             zip_path = self._cached_zip_path
 
@@ -663,11 +699,24 @@ class UpdaterViewModel(QObject):
             new_root = self._find_new_app_root(extract_to)
             if not new_root:
                 self._emit_status("Update file did not contain the app. Please re-download.")
+                self._write_update_log("FAILED: no app root found in extracted update", new_root="<none>", extract_to=extract_to)
                 return
 
             self._emit_status("Applying update — restarting…")
             self._set_applying(True)
             self._set_progress(0.0)
+
+            # Count files in extracted update for debug log
+            file_count = 0
+            for _r, _d, _f in os.walk(new_root):
+                file_count += len(_f)
+
+            self._write_update_log(
+                f"Update ready to apply: {file_count} files in extracted update",
+                new_root=new_root,
+                extract_to=extract_to,
+                file_count=file_count,
+            )
 
             self._emit_status("Preparing update files…")
             self._set_progress(0.2)
@@ -699,13 +748,23 @@ class UpdaterViewModel(QObject):
         update_dir = self._update_dir
 
         # Path to standalone updater exe (bundled next to main app exe)
-        updater_exe = os.path.join(app_root, "ShobdoCalok_updater.exe")
+        updater_exe = os.path.join(app_root, "Updater.exe")
         # Also check source dir for dev mode
         if not os.path.exists(updater_exe):
             updater_exe = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "dist", "ShobdoCalok", "ShobdoCalok_updater.exe"
+                "dist", "ShobdoCalok", "Updater.exe"
             )
+
+        self._write_update_log(
+            f"Launching applier: GUI={os.path.exists(updater_exe)}",
+            updater_exe=updater_exe,
+            updater_exists=os.path.exists(updater_exe),
+            new_root=new_root,
+            app_root=app_root,
+            extract_to=extract_to,
+            update_dir=update_dir,
+        )
 
         if os.path.exists(updater_exe):
             # Launch the standalone GUI updater (has its own PySide6 bundled)
@@ -714,10 +773,13 @@ class UpdaterViewModel(QObject):
                     [updater_exe, new_root, app_root, sys.executable, extract_to, update_dir],
                     cwd=app_root,
                 )
-            except Exception:
+                self._write_update_log("GUI updater launched successfully")
+            except Exception as e:
+                self._write_update_log(f"GUI updater launch failed: {e}")
                 self._launch_batch_applier(new_root, extract_to, zip_path)
         else:
             # No GUI updater available, use batch script
+            self._write_update_log("GUI updater not found, falling back to batch")
             self._launch_batch_applier(new_root, extract_to, zip_path)
 
         time.sleep(1)

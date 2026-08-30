@@ -21,8 +21,8 @@ if os.path.exists('client_secret.json'):
 
 # Bundle the standalone updater exe (must be built first via updater.spec)
 updater_paths = [
-    os.path.join('dist', 'ShobdoCalok', 'ShobdoCalok_updater.exe'),
-    os.path.join('dist', 'ShobdoCalok_updater.exe'),
+    os.path.join('dist', 'ShobdoCalok', 'Updater.exe'),
+    os.path.join('dist', 'Updater.exe'),
 ]
 for _p in updater_paths:
     if os.path.exists(_p):
@@ -80,7 +80,7 @@ coll = COLLECT(
 
 # Post-build: ensure the standalone updater is bundled next to the main exe
 import shutil as _shutil
-_updater_src = os.path.join('dist', 'ShobdoCalok_updater.exe')
-_updater_dst = os.path.join('dist', 'ShobdoCalok', 'ShobdoCalok_updater.exe')
+_updater_src = os.path.join('dist', 'Updater.exe')
+_updater_dst = os.path.join('dist', 'ShobdoCalok', 'Updater.exe')
 if os.path.exists(_updater_src) and not os.path.exists(_updater_dst):
     _shutil.copy2(_updater_src, _updater_dst)

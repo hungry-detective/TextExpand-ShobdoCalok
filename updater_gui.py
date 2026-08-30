@@ -7,6 +7,42 @@ import sys
 import time
 import shutil
 import subprocess
+from datetime import datetime
+
+DEBUG_LOG_NAME = "update_debug.log"
+
+
+def _log(message: str, **kwargs):
+    """Write to update_debug.log in the AppData folder next to the main app exe."""
+    try:
+        # Log goes to AppData/update_debug.log next to ShobdoCalok.exe
+        # app_root is sys.argv[2], AppData folder is app_root/AppData
+        if len(sys.argv) >= 3:
+            app_root = sys.argv[2]
+            log_path = os.path.join(app_root, "AppData", DEBUG_LOG_NAME)
+        else:
+            log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), DEBUG_LOG_NAME)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        lines = [
+            "",
+            "=" * 70,
+            f"[{timestamp}] GUI UPDATER",
+            f"Message: {message}",
+        ]
+        for k, v in kwargs.items():
+            sv = str(v)
+            if len(sv) > 500:
+                sv = sv[:500] + "..."
+            lines.append(f"{k}: {sv}")
+        lines.append(f"Python: {sys.version}")
+        lines.append(f"Frozen: {getattr(sys, 'frozen', False)}")
+        lines.append("=" * 70)
+        lines.append("")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except Exception as e:
+        print(f"Failed to write updater log: {e}")
+
 
 from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QProgressBar
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
@@ -26,9 +62,11 @@ class CopyWorker(QThread):
     def run(self):
         try:
             self.progress.emit(5, "Preparing to copy files...")
+            _log("CopyWorker started", src_dir=self.src_dir, dst_dir=self.dst_dir)
             time.sleep(0.3)
 
             if not os.path.isdir(self.src_dir):
+                _log("ERROR: source not found", src_dir=self.src_dir)
                 self.finished.emit(False, f"Source not found: {self.src_dir}")
                 return
 
@@ -39,10 +77,12 @@ class CopyWorker(QThread):
                 total_files += len(files)
 
             if total_files == 0:
+                _log("ERROR: no files in update package")
                 self.finished.emit(False, "No files found in update package!")
                 return
 
             self.progress.emit(10, f"Found {total_files} files to copy...")
+            _log(f"Found {total_files} files to copy")
             time.sleep(0.3)
 
             copied = 0
@@ -61,19 +101,22 @@ class CopyWorker(QThread):
 
                     # Try copying with retries for locked files
                     success = False
+                    last_error = ""
                     for attempt in range(5):
                         try:
                             shutil.copy2(src_file, dst_file)
                             success = True
                             break
-                        except PermissionError:
+                        except PermissionError as e:
+                            last_error = str(e)
                             time.sleep(1)
                         except Exception as e:
+                            last_error = str(e)
                             errors.append(f"{fname}: {e}")
                             break
 
                     if not success:
-                        errors.append(f"{fname}: locked after 5 retries")
+                        errors.append(f"{fname}: locked after 5 retries - {last_error}")
 
                     copied += 1
                     pct = 10 + int((copied / total_files) * 80)
@@ -82,12 +125,16 @@ class CopyWorker(QThread):
 
             if errors:
                 self.progress.emit(95, f"Copied {copied}/{total_files} files ({len(errors)} issues)")
+                _log(f"Copy completed with errors: {copied}/{total_files} copied, {len(errors)} failed",
+                     errors=errors[:10])
             else:
                 self.progress.emit(95, f"All {copied} files copied!")
+                _log(f"Copy completed successfully: {copied} files")
 
             time.sleep(0.5)
             self.finished.emit(True, f"Update complete! {copied} files installed.")
         except Exception as e:
+            _log(f"CopyWorker exception: {e}")
             self.finished.emit(False, f"Error: {e}")
 
 
@@ -165,29 +212,34 @@ class UpdaterWindow(QWidget):
         self.status_label.setText(msg)
         self.detail_label.setText("Starting ShobdoCalok...")
 
+        _log(f"Copy finished: success={success}, msg={msg}")
+
         # Cleanup extract and update dirs
         try:
             if os.path.isdir(self.extract_dir):
                 shutil.rmtree(self.extract_dir, ignore_errors=True)
-        except Exception:
-            pass
+                _log(f"Removed extract dir: {self.extract_dir}")
+        except Exception as e:
+            _log(f"Failed to remove extract dir: {e}")
 
         # Launch app after brief delay
         def launch_and_close():
+            _log(f"Launching app: {self.app_exe}")
             try:
                 subprocess.Popen(
                     [self.app_exe],
                     cwd=os.path.dirname(self.app_exe),
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                _log(f"Failed to launch app: {e}")
             # Cleanup update dir
             try:
                 if os.path.isdir(self.update_dir):
                     shutil.rmtree(self.update_dir, ignore_errors=True)
-            except Exception:
-                pass
+                    _log(f"Removed update dir: {self.update_dir}")
+            except Exception as e:
+                _log(f"Failed to remove update dir: {e}")
             QApplication.quit()
 
         QTimer.singleShot(1000, launch_and_close)
@@ -195,6 +247,7 @@ class UpdaterWindow(QWidget):
 
 def main():
     if len(sys.argv) < 6:
+        _log("ERROR: not enough arguments", argv=sys.argv)
         QMessageBox = None
         try:
             from PySide6.QtWidgets import QMessageBox
@@ -210,6 +263,10 @@ def main():
     app_exe = sys.argv[3]
     extract_dir = sys.argv[4]
     update_dir = sys.argv[5]
+
+    _log("GUI updater started",
+         src_dir=src_dir, dst_dir=dst_dir, app_exe=app_exe,
+         extract_dir=extract_dir, update_dir=update_dir)
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(True)

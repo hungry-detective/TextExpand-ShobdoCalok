@@ -43,7 +43,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ShobdoCalok_updater',
+    name='Updater',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -58,7 +58,7 @@ exe = EXE(
 )
 
 # Move the single-file exe into dist/ShobdoCalok/ so the main build can find it
-_src = os.path.join(DISTPATH, 'ShobdoCalok_updater.exe')
-_dst = os.path.join(DISTPATH, 'ShobdoCalok', 'ShobdoCalok_updater.exe')
+_src = os.path.join(DISTPATH, 'Updater.exe')
+_dst = os.path.join(DISTPATH, 'ShobdoCalok', 'Updater.exe')
 if os.path.exists(_src) and not os.path.exists(_dst):
     shutil.copy2(_src, _dst)
