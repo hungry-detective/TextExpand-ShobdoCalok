@@ -3,30 +3,30 @@ import os
 import platform
 import threading
 
-# Suppress brotlicffi import errors — it's not needed and causes crashes
-# on machines where it's not installed (transitive dep of mitmproxy/py7zr).
-# urllib3 checks brotlicffi.error and brotli.Decompressor, so stubs must
-# provide those attributes to avoid AttributeError.
-import types as _types
+# Block brotlicffi/brotli imports BEFORE anything else loads.
+# PyInstaller bundles these if they're installed in the build environment
+# (e.g. via mitmproxy/py7zr), but they crash at runtime on clean machines.
+# We install a meta_path finder that makes these imports fail immediately,
+# so urllib3 falls back to gzip/deflate without ever touching brotli.
+class _BrotliBlocker:
+    """Import hook that blocks brotli/brotlicffi/_brotlicffi imports."""
+    def find_module(self, fullname, path=None):
+        if fullname in ("brotli", "brotlicffi", "_brotlicffi"):
+            return self
+        return None
+    def load_module(self, fullname):
+        raise ImportError(f"Blocked: {fullname} (not needed)")
+    def find_spec(self, fullname, path, target=None):
+        if fullname in ("brotli", "brotlicffi", "_brotlicffi"):
+            import importlib.util
+            return importlib.util.spec_from_loader(fullname, self)
+        return None
+    def create_module(self, spec):
+        return None
+    def exec_module(self, module):
+        raise ImportError(f"Blocked: {module.__name__}")
 
-class _BrotliStubModule(_types.ModuleType):
-    """Empty module that claims brotli is not available."""
-    error = type("error", (Exception,), {})
-    class Decompressor:
-        def __init__(self, **kw): pass
-        def decompress(self, data, max_length=0): return data
-        def flush(self): return b""
-    def __getattr__(self, name):
-        raise ImportError(f"module 'brotli' has no attribute '{name}'")
-    def __bool__(self):
-        return False
-
-for _name in ("brotli", "brotlicffi", "_brotlicffi"):
-    if _name not in sys.modules:
-        mod = _BrotliStubModule(_name)
-        mod.__package__ = _name
-        mod.__path__ = []
-        sys.modules[_name] = mod
+sys.meta_path.insert(0, _BrotliBlocker())
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QFontDatabase, QIcon, QAction

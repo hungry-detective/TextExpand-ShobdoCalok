@@ -217,21 +217,20 @@ class UpdaterViewModel(QObject):
 
     def _do_check(self):
         try:
-            import urllib3
+            import requests
             self._set_checking(True)
             self._emit_status("Checking for updates…")
-            http = urllib3.PoolManager(headers=_HEADERS, timeout=30)
-            resp = http.request("GET", RELEASES_API)
-            if resp.status == 404:
+            resp = requests.get(RELEASES_API, headers=_HEADERS, timeout=30)
+            if resp.status_code == 404:
                 self._emit_status(
                     "No releases found yet. Updates are published as GitHub Releases."
                 )
                 return
-            if resp.status != 200:
-                self._emit_status(f"Update check failed (HTTP {resp.status}).")
+            if resp.status_code != 200:
+                self._emit_status(f"Update check failed (HTTP {resp.status_code}).")
                 return
 
-            data = json.loads(resp.data.decode("utf-8"))
+            data = resp.json()
             tag = data.get("tag_name", "")
             latest = tag.lstrip("v")
             assets = data.get("assets", [])
@@ -301,21 +300,9 @@ class UpdaterViewModel(QObject):
     def _download_with_resume(self, url: str, dest: str) -> bool:
         """Download a file with resume support and retry logic.
 
-        Uses urllib3 directly (not requests) for:
-        - Faster downloads (no brotli auto-detection overhead)
-        - Connection pooling and keep-alive
-        - Direct control over timeouts and redirects
-
         Returns True on success, False on failure after all retries.
         """
-        import urllib3
-
-        http = urllib3.PoolManager(
-            headers=_HEADERS,
-            maxsize=4,
-            retries=0,
-            timeout=urllib3.Timeout(connect=30, read=30),
-        )
+        import requests
 
         for attempt in range(MAX_RETRIES):
             try:
@@ -323,42 +310,38 @@ class UpdaterViewModel(QObject):
                 if os.path.exists(dest):
                     existing_size = os.path.getsize(dest)
 
-                req_headers = {}
+                headers = dict(_HEADERS)
                 if existing_size > 0:
-                    req_headers["Range"] = f"bytes={existing_size}-"
+                    headers["Range"] = f"bytes={existing_size}-"
                     self._emit_status(
                         f"Resuming download from {existing_size / (1<<20):.1f} MB…"
                     )
 
-                r = http.request("GET", url, headers=req_headers, preload_content=False)
+                with requests.get(url, headers=headers, stream=True, timeout=(30, 120)) as r:
+                    if r.status_code == 416:
+                        self._set_progress(1.0)
+                        return True
 
-                if r.status == 416:
-                    self._set_progress(1.0)
-                    return True
+                    if r.status_code == 200:
+                        existing_size = 0
+                    elif r.status_code == 206:
+                        pass
+                    else:
+                        r.raise_for_status()
 
-                if r.status == 200:
-                    existing_size = 0
-                elif r.status == 206:
-                    pass
-                else:
-                    r.close()
-                    raise RuntimeError(f"HTTP {r.status}")
+                    total = int(r.headers.get("Content-Length", 0)) + existing_size
+                    done = existing_size
 
-                total = int(r.headers.get("Content-Length", 0)) + existing_size
-                done = existing_size
+                    mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
+                    with open(dest, mode) as f:
+                        for chunk in r.iter_content(chunk_size=16 << 20):  # 16MB chunks
+                            if not chunk:
+                                continue
+                            f.write(chunk)
+                            done += len(chunk)
+                            if total:
+                                self._set_progress(min(done / total, 1.0))
 
-                mode = "ab" if existing_size > 0 and r.status == 206 else "wb"
-                with open(dest, mode) as f:
-                    while True:
-                        chunk = r.read(8 << 20)  # 8MB chunks
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        done += len(chunk)
-                        if total:
-                            self._set_progress(min(done / total, 1.0))
-
-                r.close()
                 return True
 
             except Exception as e:
@@ -411,26 +394,25 @@ class UpdaterViewModel(QObject):
             self._emit_status("No checksum file available — skipping verification.")
             return True
 
-        import urllib3
+        import requests
 
         try:
             self._emit_status("Verifying checksum…")
-            http = urllib3.PoolManager(headers=_HEADERS, timeout=30)
-            resp = http.request("GET", self._checksum_url)
-            if resp.status != 200:
+            resp = requests.get(self._checksum_url, headers=_HEADERS, timeout=30)
+            if resp.status_code != 200:
                 self._emit_status("Could not download checksum — skipping verification.")
                 return True
 
             # Save the checksum file locally for future caching
             try:
                 with open(self._cached_checksum_path, "w") as f:
-                    f.write(resp.data.decode("utf-8"))
+                    f.write(resp.text)
             except Exception:
                 pass
 
             # Parse the .sha256 file
             # Format: "<hash>" or "<hash>  <filename>" — take first token only
-            text = resp.data.decode("utf-8").strip()
+            text = resp.text.strip()
             if not text:
                 self._emit_status("Checksum file is empty — skipping verification.")
                 return True
@@ -464,6 +446,7 @@ class UpdaterViewModel(QObject):
             self._emit_status("An update is already in progress.")
             return
         try:
+            import requests
             if not self._is_frozen:
                 self._emit_status(
                     "Updates can only be installed in the packaged app. "
