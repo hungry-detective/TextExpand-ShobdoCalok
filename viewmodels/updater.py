@@ -49,7 +49,13 @@ RELEASES_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/relea
 _HEADERS = {
     "Accept": "application/vnd.github+json",
     "User-Agent": "ShobdoCalok-Updater",
-    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
+
+# Separate headers for binary downloads — no Accept-Encoding to prevent
+# CDN from compressing the ZIP (which changes bytes and breaks SHA256).
+_DL_HEADERS = {
+    "User-Agent": "ShobdoCalok-Updater",
     "Connection": "keep-alive",
 }
 
@@ -308,7 +314,7 @@ class UpdaterViewModel(QObject):
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
 
                 # GET request to determine total size (follows redirects, unlike HEAD)
-                probe = requests.get(url, headers=_HEADERS, stream=True, timeout=30)
+                probe = requests.get(url, headers=_DL_HEADERS, stream=True, timeout=30)
                 total_size = int(probe.headers.get("Content-Length", 0))
                 accept_ranges = probe.headers.get("Accept-Ranges", "") == "bytes"
                 probe.close()
@@ -357,7 +363,7 @@ class UpdaterViewModel(QObject):
                             done_bytes += (chunk_end - chunk_start + 1)
                         return True
 
-                    h = dict(_HEADERS)
+                    h = dict(_DL_HEADERS)
                     h["Range"] = f"bytes={local_start}-{chunk_end}"
                     r = requests.get(url, headers=h, stream=True, timeout=(30, 120))
                     if r.status_code not in (200, 206):
@@ -464,7 +470,7 @@ class UpdaterViewModel(QObject):
                 if os.path.exists(dest):
                     existing_size = os.path.getsize(dest)
 
-                req_headers = dict(_HEADERS)
+                req_headers = dict(_DL_HEADERS)
                 if existing_size > 0:
                     req_headers["Range"] = f"bytes={existing_size}-"
 
@@ -711,7 +717,7 @@ echo. >> "%LOG%"
 
 echo [1/4] Killing app process... >> "%LOG%"
 taskkill /F /IM ShobdoCalok.exe 2>nul >> "%LOG%"
-timeout /t 2 /nobreak >nul
+timeout /t 3 /nobreak >nul
 echo [1/4] Process killed. >> "%LOG%"
 
 echo [2/4] Checking source... >> "%LOG%"
@@ -723,28 +729,34 @@ if exist "%NEW%\\ShobdoCalok.exe" (
     set "LAUNCH_EXE=0"
 ) else (
     echo [2/4] ERROR: No app found in: %NEW% >> "%LOG%"
-    goto cleanup
+    goto start_app
 )
 
 echo [3/4] Copying new files... >> "%LOG%"
-robocopy "%NEW%" "%APP%" /E /XD AppData /NFL /NDL /NJH /NJS /NC /NS /NP >> "%LOG%"
+robocopy "%NEW%" "%APP%" /E /XD AppData /NFL /NDL /NJH /NJS /NC /NS /NP
 set RC=!errorlevel!
 echo [3/4] Copy finished ^(errorlevel !RC!^) >> "%LOG%"
+if !RC! GEQ 8 (
+    echo [3/4] WARNING: robocopy had errors, trying xcopy... >> "%LOG%"
+    xcopy "%NEW%\\*" "%APP%\\" /E /Y /Q >> "%LOG%" 2>nul
+)
 
+:start_app
 echo [4/4] Starting app... >> "%LOG%"
 if "!LAUNCH_EXE!"=="1" (
     start "" "%APP%\\ShobdoCalok.exe"
-) else (
+) else if "!LAUNCH_EXE!"=="0" (
     start "" /D "%APP%" python main.py
+) else (
+    start "" "%APP%\\ShobdoCalok.exe"
 )
 echo [4/4] App started. >> "%LOG%"
 
-:cleanup
+timeout /t 2 /nobreak >nul
 echo Cleaning up update files... >> "%LOG%"
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
 if exist "%UPDATE%" rmdir /s /q "%UPDATE%"
 del "%~f0" 2>nul
-del "{vbs}" 2>nul
 """
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
             f.write(batch_script.replace("\n", "\r\n"))
