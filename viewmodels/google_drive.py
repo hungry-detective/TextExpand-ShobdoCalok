@@ -93,6 +93,7 @@ class GoogleDriveViewModel(QObject):
         self._account_name = ""
         self._last_backup = ""
         self._busy = False
+        self._login_cancelled = False
         self._snippet_store = None        # set later from main.py
 
         self._load_creds()
@@ -258,6 +259,7 @@ class GoogleDriveViewModel(QObject):
     def _start_login(self):
         try:
             self._set_busy(True)
+            self._login_cancelled = False
             secrets = self._client_secrets()
 
             # Pick a free loopback port
@@ -286,11 +288,17 @@ class GoogleDriveViewModel(QObject):
             try:
                 webbrowser.open(auth_url)
                 deadline = time.time() + 180
-                while time.time() < deadline and _RedirectHandler.result is None:
+                while (time.time() < deadline
+                       and _RedirectHandler.result is None
+                       and not self._login_cancelled):
                     server.handle_request()
                     time.sleep(0.05)
             finally:
                 server.server_close()
+
+            if self._login_cancelled:
+                self.statusMessage.emit("Login cancelled.")
+                return
 
             result = _RedirectHandler.result
             if not result:
@@ -497,8 +505,23 @@ class GoogleDriveViewModel(QObject):
     @Slot()
     def login(self):
         if self._busy:
+            # Cancel the previous login attempt, then start a new one
+            self._login_cancelled = True
+            # Wait briefly for old thread to finish, then start new one
+            threading.Thread(target=self._retry_login_after_cancel, daemon=True).start()
             return
+        self._login_cancelled = False
         threading.Thread(target=self._start_login, daemon=True).start()
+
+    def _retry_login_after_cancel(self):
+        """Wait for the old login to finish, then start a new one."""
+        for _ in range(100):
+            if not self._busy:
+                break
+            time.sleep(0.05)
+        if not self._busy and not self._login_cancelled:
+            self._login_cancelled = False
+            threading.Thread(target=self._start_login, daemon=True).start()
 
     @Slot()
     def logout(self):

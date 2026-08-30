@@ -49,6 +49,8 @@ jobs:
         run: |
           if (-not (Test-Path "ShobdoCalok.exe")) { throw "ShobdoCalok.exe missing" }
           if (-not (Test-Path "_internal")) { throw "_internal missing" }
+          if (-not (Test-Path "_internal/client_secret.json")) { throw "client_secret.json missing — login won't work" }
+          Write-Host "All checks passed (including client_secret.json)"
 
       - name: Zip portable build
         working-directory: dist
