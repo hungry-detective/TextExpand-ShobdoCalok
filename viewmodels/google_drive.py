@@ -647,30 +647,41 @@ class GoogleDriveViewModel(QObject):
                 token = self._access_token()
                 files = self._list_all_backups(token)
                 result = []
+                from datetime import datetime
                 for f in files:
                     name = f.get("name", "")
                     mt = f.get("modifiedTime", "")
-                    # Create human-readable label
+                    # Extract backup name and time label
                     if name == BACKUP_FILE_NAME:
-                        label = "Latest backup"
+                        backup_name = "Latest Backup"
                     elif name.startswith(BACKUP_HISTORY_PREFIX):
-                        # Extract date from filename
                         dt_str = name.replace(BACKUP_HISTORY_PREFIX, "").replace(".json", "")
-                        label = f"Backup: {dt_str}"
+                        # Convert "2026-08-30-11-34" to readable format
+                        try:
+                            parts = dt_str.split("-")
+                            if len(parts) >= 5:
+                                dt_obj = datetime(int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
+                                backup_name = dt_obj.strftime("Backup — %d %B %Y, %I:%M %p")
+                            else:
+                                backup_name = "Backup: " + dt_str
+                        except Exception:
+                            backup_name = "Backup: " + dt_str
                     else:
-                        label = name
-                    # Format modifiedTime
+                        backup_name = name
+                    # Format time label from modifiedTime
+                    time_label = ""
                     if mt:
-                        from datetime import datetime
                         try:
                             dt = datetime.fromisoformat(mt.replace("Z", "+00:00"))
-                            label += f" ({dt.strftime('%b %d, %Y %I:%M %p')})"
+                            time_label = dt.strftime("%b %d, %Y %I:%M %p")
                         except Exception:
-                            label += f" ({mt[:10]})"
+                            time_label = mt[:10]
                     result.append({
                         "id": f.get("id", ""),
                         "name": name,
-                        "label": label,
+                        "backupName": backup_name,
+                        "timeLabel": time_label,
+                        "label": backup_name,
                     })
                 self.backupListReady.emit(result)
             except Exception as e:

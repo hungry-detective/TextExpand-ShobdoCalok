@@ -13,6 +13,17 @@ Item {
         anchors.rightMargin: -60; anchors.bottomMargin: -60
     }
 
+    function _defaultBackupName() {
+        var d = new Date()
+        var months = ["January","February","March","April","May","June","July","August","September","October","November","December"]
+        var h = d.getHours()
+        var ampm = h >= 12 ? "PM" : "AM"
+        h = h % 12; if (h === 0) h = 12
+        var m = d.getMinutes()
+        var pad = m < 10 ? "0" : ""
+        return "Snippets " + d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear() + " " + h + ":" + pad + m + " " + ampm
+    }
+
     Flickable {
         anchors.fill: parent
         contentHeight: mainCol.height + 64
@@ -25,7 +36,6 @@ Item {
             anchors.margins: 32
             spacing: 0
 
-            // ── Page Header ───────────────────────────────────────────────────
             ColumnLayout {
                 spacing: 4
                 Text {
@@ -42,12 +52,10 @@ Item {
 
             Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15; Layout.topMargin: 20; Layout.bottomMargin: 20 }
 
-            // ── Sections ──────────────────────────────────────────────────────
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 24
 
-                // Section: LIBRARY
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 12
@@ -80,7 +88,6 @@ Item {
                     }
                 }
 
-                // Section: GOOGLE BACKUP
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 12
@@ -90,7 +97,6 @@ Item {
                         Layout.leftMargin: 48
                     }
 
-                    // ── Account status card ───────────────────────────────────
                     Rectangle {
                         Layout.fillWidth: true; height: 60; radius: 14
                         color: AppTheme.surface
@@ -145,7 +151,6 @@ Item {
                         }
                     }
 
-                    // ── Backup / Restore buttons ──────────────────────────────
                     Rectangle {
                         Layout.fillWidth: true; height: 56; radius: 14
                         color: AppTheme.surface
@@ -163,7 +168,7 @@ Item {
                                 enabled: !driveViewModel.busy
                                 opacity: enabled ? 1 : 0.5
                                 HoverHandler { id: backupHover }
-                                TapHandler { onTapped: { backupNameInput.text = "Snippets " + Qt.formatDateTime(new Date(), "dd MMMM yyyy"); backupOptionsDialog.open() } }
+                                TapHandler { onTapped: { backupNameInput.text = backupRoot._defaultBackupName(); backupOptionsDialog.open() } }
                                 ColumnLayout {
                                     anchors.centerIn: parent; spacing: 1
                                     Text {
@@ -209,7 +214,7 @@ Item {
                 }
             }
 
-            Item { Layout.preferredHeight: 40 } // Spacer
+            Item { Layout.preferredHeight: 40 }
 
             Text {
                 Layout.alignment: Qt.AlignHCenter
@@ -225,7 +230,7 @@ Item {
         id: backupOptionsDialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 420; height: 440
+        width: 420; height: 460
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
         onOpened: { driveViewModel.listBackups() }
@@ -238,7 +243,6 @@ Item {
                 color: AppTheme.textPrimary
             }
 
-            // Backup name input
             Text {
                 text: "Backup Name"
                 font.family: "Inter"; font.pixelSize: 11; font.bold: true
@@ -255,32 +259,27 @@ Item {
                     color: AppTheme.textPrimary
                     clip: true
                     selectByMouse: true
-                    Keys.onReturnPressed: createBackupBtn.clicked()
+                    Keys.onReturnPressed: doCreateBackup()
                 }
             }
 
             Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
 
-            // Create backup button
             Rectangle {
                 Layout.fillWidth: true; height: 44; radius: 10
                 color: createBackupHover.hovered ? AppTheme.primaryHover : AppTheme.primary
                 HoverHandler { id: createBackupHover }
                 MouseArea {
                     anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        backupOptionsDialog.close()
-                        driveViewModel.backupWithName(backupNameInput.text)
-                    }
+                    onClicked: doCreateBackup()
                 }
                 RowLayout {
-                    anchors.fill: parent; anchors.margins: 10; spacing: 10
-                    Text { anchors.left: parent.left; anchors.leftMargin: 8; text: "cloud_upload"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "white" }
+                    anchors.centerIn: parent; spacing: 8
+                    Text { text: "cloud_upload"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "white" }
                     Text { text: "Create Backup"; font.family: "Inter"; font.pixelSize: 13; font.bold: true; color: "white" }
                 }
             }
 
-            // Delete old backups
             Rectangle {
                 Layout.fillWidth: true; height: 44; radius: 10
                 color: deleteBackupHover.hovered ? "#fef2f2" : "transparent"
@@ -291,22 +290,21 @@ Item {
                     onClicked: { backupOptionsDialog.close(); driveViewModel.deleteOldBackups() }
                 }
                 RowLayout {
-                    anchors.fill: parent; anchors.margins: 10; spacing: 10
-                    Text { anchors.left: parent.left; anchors.leftMargin: 8; text: "delete_sweep"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "#ef4444" }
+                    anchors.centerIn: parent; spacing: 8
+                    Text { text: "delete_sweep"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "#ef4444" }
                     Text { text: "Delete Old Backups"; font.family: "Inter"; font.pixelSize: 13; font.bold: true; color: "#ef4444" }
                 }
             }
 
             Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
 
-            // Existing backups list
             Text {
                 text: "Existing Backups"
                 font.family: "Inter"; font.pixelSize: 11; font.bold: true
                 color: AppTheme.textSecondary
             }
             Rectangle {
-                Layout.fillWidth: true; height: 120; radius: 10
+                Layout.fillWidth: true; Layout.fillHeight: true; minimumHeight: 80; maximumHeight: 120; radius: 10
                 color: AppTheme.isDark ? "#1a1d23" : "#f8fafc"
                 border.color: AppTheme.hoverBg; border.width: 1
                 clip: true
@@ -316,14 +314,14 @@ Item {
                     clip: true; spacing: 3
                     model: ListModel { id: existingBackupsModel }
                     delegate: Rectangle {
-                        width: existingBackupsList.width; height: 30; radius: 6
+                        width: existingBackupsList.width; height: 28; radius: 6
                         color: "transparent"
                         RowLayout {
                             anchors.fill: parent; anchors.margins: 4; spacing: 6
                             Text {
-                                text: model.name === "ShobdoCalok.snippets.json" ? "cloud_done" : "history"
+                                text: index === 0 ? "cloud_done" : "history"
                                 font.family: "Material Symbols Outlined"; font.pixelSize: 14
-                                color: model.name === "ShobdoCalok.snippets.json" ? AppTheme.primary : AppTheme.textSecondary
+                                color: index === 0 ? AppTheme.primary : AppTheme.textSecondary
                             }
                             Text {
                                 text: model.label
@@ -336,10 +334,8 @@ Item {
                 }
             }
 
-            Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
-
             RowLayout {
-                Layout.fillWidth: true
+                Layout.fillWidth: true; Layout.topMargin: 4
                 Item { Layout.fillWidth: true }
                 Rectangle {
                     width: 80; height: 32; radius: 8
@@ -347,10 +343,18 @@ Item {
                     border.color: AppTheme.textSecondary; border.width: 1
                     HoverHandler { id: backupCancelHover }
                     TapHandler { onTapped: backupOptionsDialog.close() }
-                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Cancel"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary
+                    }
                 }
             }
         }
+    }
+
+    function doCreateBackup() {
+        backupOptionsDialog.close()
+        driveViewModel.backupWithName(backupNameInput.text)
     }
 
     // ── Restore picker dialog ────────────────────────────────────────────────
@@ -358,7 +362,7 @@ Item {
         id: restorePicker
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 440; height: 420
+        width: 440; height: 440
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
         onOpened: { restoreListModel.clear(); driveViewModel.listBackups() }
@@ -387,7 +391,7 @@ Item {
                     model: ListModel { id: restoreListModel }
                     delegate: Rectangle {
                         id: restoreItem
-                        width: restoreList.width; height: 50; radius: 8
+                        width: restoreList.width; height: 52; radius: 8
                         color: restoreItemHover.hovered ? AppTheme.primaryLight : "transparent"
                         property string fileId: model.fileId
                         property int itemIndex: index
@@ -395,7 +399,7 @@ Item {
                         RowLayout {
                             anchors.fill: parent; anchors.margins: 8; spacing: 10
                             Rectangle {
-                                width: 34; height: 34; radius: 8
+                                width: 36; height: 36; radius: 8
                                 color: restoreItem.itemIndex === 0 ? AppTheme.primaryLight : (AppTheme.isDark ? "#2a2d35" : "#f1f5f9")
                                 Text {
                                     anchors.centerIn: parent
@@ -407,15 +411,14 @@ Item {
                             ColumnLayout {
                                 Layout.fillWidth: true; spacing: 2
                                 Text {
-                                    text: restoreItem.itemIndex === 0 ? "Latest Backup" : "Previous Backup"
+                                    text: model.backupName
                                     font.family: "Inter"; font.pixelSize: 12; font.bold: true
-                                    color: AppTheme.textPrimary
+                                    color: AppTheme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true
                                 }
                                 Text {
-                                    text: model.label
+                                    text: model.timeLabel
                                     font.family: "Inter"; font.pixelSize: 10
                                     color: AppTheme.textSecondary; elide: Text.ElideRight
-                                    Layout.fillWidth: true
                                 }
                             }
                             Rectangle {
@@ -463,7 +466,10 @@ Item {
                     border.color: AppTheme.textSecondary; border.width: 1
                     HoverHandler { id: restoreCancelHover }
                     TapHandler { onTapped: restorePicker.close() }
-                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Cancel"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary
+                    }
                 }
             }
         }
@@ -517,8 +523,8 @@ Item {
             for (var i = 0; i < list.length; i++) {
                 restoreListModel.append({
                     "fileId": list[i].id,
-                    "name": list[i].name,
-                    "label": list[i].label
+                    "backupName": list[i].backupName,
+                    "timeLabel": list[i].timeLabel
                 })
                 existingBackupsModel.append({
                     "name": list[i].name,
@@ -528,7 +534,6 @@ Item {
         }
     }
 
-    // ── Reusable Row Component ─────────────────────────────────────────────
     component SettingsRow: Rectangle {
         id: rowRoot
         property string icon
