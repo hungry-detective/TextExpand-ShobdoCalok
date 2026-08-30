@@ -117,6 +117,7 @@ class UpdaterViewModel(QObject):
     applyingChanged     = Signal(bool)
     progressChanged     = Signal(float)
     statusMessage       = Signal(str)
+    statusMessageTextChanged = Signal(str)
     updateAvailableChanged = Signal(bool)
 
     def __init__(self, data_dir: str, parent=None):
@@ -133,6 +134,7 @@ class UpdaterViewModel(QObject):
         self._asset_url = ""
         self._checksum_url = ""
         self._release_url = ""
+        self._status_message_text = ""
         self._download_lock = threading.Lock()
         self._cached_zip_path = os.path.join(self._update_dir, "ShobdoCalok-latest.zip")
         self._cached_checksum_path = os.path.join(self._update_dir, "ShobdoCalok-latest.sha256")
@@ -169,6 +171,10 @@ class UpdaterViewModel(QObject):
     @Property(float, notify=progressChanged)
     def progress(self) -> float:
         return self._progress
+
+    @Property(str, notify=statusMessageTextChanged)
+    def statusMessage_text(self) -> str:
+        return self._status_message_text
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -211,6 +217,8 @@ class UpdaterViewModel(QObject):
         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def _emit_status(self, msg: str):
+        self._status_message_text = msg
+        self.statusMessageTextChanged.emit(msg)
         self.statusMessage.emit(msg)
 
     # ── Check for updates ──────────────────────────────────────────────────────
@@ -300,9 +308,18 @@ class UpdaterViewModel(QObject):
     def _download_with_resume(self, url: str, dest: str) -> bool:
         """Download a file with resume support and retry logic.
 
-        Returns True on success, False on failure after all retries.
+        Uses a persistent requests.Session for connection reuse and shows
+        live download speed in the status bar.
         """
         import requests
+
+        session = requests.Session()
+        session.headers.update(_HEADERS)
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=2, pool_maxsize=4, max_retries=0,
+        )
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
 
         for attempt in range(MAX_RETRIES):
             try:
@@ -310,38 +327,52 @@ class UpdaterViewModel(QObject):
                 if os.path.exists(dest):
                     existing_size = os.path.getsize(dest)
 
-                headers = dict(_HEADERS)
+                req_headers = {}
                 if existing_size > 0:
-                    headers["Range"] = f"bytes={existing_size}-"
+                    req_headers["Range"] = f"bytes={existing_size}-"
                     self._emit_status(
                         f"Resuming download from {existing_size / (1<<20):.1f} MB…"
                     )
 
-                with requests.get(url, headers=headers, stream=True, timeout=(30, 120)) as r:
-                    if r.status_code == 416:
-                        self._set_progress(1.0)
-                        return True
+                r = session.get(url, headers=req_headers, stream=True, timeout=(30, 120))
+                if r.status_code == 416:
+                    self._set_progress(1.0)
+                    return True
+                if r.status_code == 200:
+                    existing_size = 0
+                elif r.status_code == 206:
+                    pass
+                else:
+                    r.raise_for_status()
 
-                    if r.status_code == 200:
-                        existing_size = 0
-                    elif r.status_code == 206:
-                        pass
-                    else:
-                        r.raise_for_status()
+                total = int(r.headers.get("Content-Length", 0)) + existing_size
+                done = existing_size
+                t0 = time.monotonic()
+                bytes_since_report = 0
 
-                    total = int(r.headers.get("Content-Length", 0)) + existing_size
-                    done = existing_size
+                mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
+                with open(dest, mode) as f:
+                    for chunk in r.iter_content(chunk_size=2 << 20):  # 2MB chunks for speed updates
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        done += len(chunk)
+                        bytes_since_report += len(chunk)
+                        if total:
+                            self._set_progress(min(done / total, 1.0))
+                        # Update speed every 0.5s
+                        elapsed = time.monotonic() - t0
+                        if elapsed >= 0.5 and bytes_since_report:
+                            speed = bytes_since_report / elapsed / (1 << 20)
+                            self._emit_status(
+                                f"Downloading… {done / (1<<20):.0f}/{total / (1<<20):.0f} MB "
+                                f"({speed:.1f} MB/s)"
+                            )
+                            t0 = time.monotonic()
+                            bytes_since_report = 0
 
-                    mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
-                    with open(dest, mode) as f:
-                        for chunk in r.iter_content(chunk_size=16 << 20):  # 16MB chunks
-                            if not chunk:
-                                continue
-                            f.write(chunk)
-                            done += len(chunk)
-                            if total:
-                                self._set_progress(min(done / total, 1.0))
-
+                r.close()
+                session.close()
                 return True
 
             except Exception as e:
@@ -354,8 +385,10 @@ class UpdaterViewModel(QObject):
                     time.sleep(wait)
                 else:
                     self._emit_status(f"Download failed after {MAX_RETRIES} attempts: {e}")
+                    session.close()
                     return False
 
+        session.close()
         return False
 
     # ── Extract with progress ──────────────────────────────────────────────────
@@ -517,6 +550,14 @@ class UpdaterViewModel(QObject):
 
             self._emit_status("Applying update — restarting…")
             self._set_applying(True)
+            self._set_progress(0.0)
+
+            self._emit_status("Preparing update files…")
+            self._set_progress(0.2)
+            time.sleep(0.3)
+
+            self._emit_status("Launching updater…")
+            self._set_progress(0.5)
             self._launch_applier(new_root, extract_to, zip_path)
 
         except Exception as e:

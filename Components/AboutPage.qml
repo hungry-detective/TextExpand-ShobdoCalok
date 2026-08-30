@@ -298,4 +298,93 @@ Item {
             opacity: 0.6
         }
     }
+
+    // ── Applying overlay ─────────────────────────────────────────────────
+    Rectangle {
+        id: applyingOverlay
+        anchors.fill: parent
+        visible: updaterViewModel && updaterViewModel.applying
+        color: AppTheme.isDark ? "#cc0d0f12" : "#ccf8fafc"
+        z: 100
+
+        ColumnLayout {
+            anchors.centerIn: parent
+            spacing: 20
+            width: 320
+
+            // Spinning update icon
+            Item {
+                Layout.alignment: Qt.AlignHCenter
+                width: 64; height: 64
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 64; height: 64; radius: 32
+                    color: "#22c55e"; opacity: 0.15
+                    SequentialAnimation on scale {
+                        loops: Animation.Infinite
+                        NumberAnimation { to: 1.1; duration: 800; easing.type: Easing.InOutSine }
+                        NumberAnimation { to: 0.95; duration: 800; easing.type: Easing.InOutSine }
+                    }
+                }
+                Text {
+                    anchors.centerIn: parent
+                    text: "system_update"
+                    font.family: "Material Symbols Outlined"
+                    font.pixelSize: 32
+                    color: "#22c55e"
+                    RotationAnimation on rotation {
+                        loops: Animation.Infinite
+                        from: 0; to: 360
+                        duration: 2000
+                        easing.type: Easing.Linear
+                    }
+                }
+            }
+
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: "Applying Update"
+                font.family: "Inter"
+                font.pixelSize: 18
+                font.bold: true
+                color: AppTheme.textPrimary
+            }
+
+            Text {
+                id: applyStepLabel
+                Layout.alignment: Qt.AlignHCenter
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: updaterViewModel ? updaterViewModel.statusMessage_text : "Preparing…"
+                font.family: "Inter"
+                font.pixelSize: 13
+                color: AppTheme.textSecondary
+                wrapMode: Text.WordWrap
+            }
+
+            // Progress bar
+            Rectangle {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 240
+                height: 6; radius: 3
+                color: AppTheme.isDark ? "#1e293b" : "#e2e8f0"
+
+                Rectangle {
+                    width: parent.width * (updaterViewModel ? updaterViewModel.progress : 0)
+                    height: parent.height; radius: 3
+                    color: "#22c55e"
+                    Behavior on width { NumberAnimation { duration: 200 } }
+                }
+            }
+
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: updaterViewModel ? Math.round(updaterViewModel.progress * 100) + "%" : "0%"
+                font.family: "Inter"
+                font.pixelSize: 12
+                font.bold: true
+                color: "#22c55e"
+            }
+        }
+    }
 }
