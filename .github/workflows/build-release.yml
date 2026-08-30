@@ -41,6 +41,15 @@ jobs:
           else:
               print("WARNING: GOOGLE_CLIENT_SECRET_JSON secret not set, skipping")
 
+      - name: Build standalone updater
+        run: pyinstaller --noconfirm --clean updater.spec
+
+      - name: Stage updater for main build
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "dist/ShobdoCalok" -Force
+          Copy-Item "dist/ShobdoCalok_updater.exe" "dist/ShobdoCalok/ShobdoCalok_updater.exe" -Force
+
       - name: Build portable app
         run: pyinstaller --noconfirm --clean ShobdoCalok.spec
 
