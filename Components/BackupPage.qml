@@ -304,7 +304,7 @@ Item {
                 color: AppTheme.textSecondary
             }
             Rectangle {
-                Layout.fillWidth: true; Layout.fillHeight: true; minimumHeight: 80; maximumHeight: 120; radius: 10
+                Layout.fillWidth: true; Layout.fillHeight: true; Layout.minimumHeight: 80; Layout.maximumHeight: 120; radius: 10
                 color: AppTheme.isDark ? "#1a1d23" : "#f8fafc"
                 border.color: AppTheme.hoverBg; border.width: 1
                 clip: true
