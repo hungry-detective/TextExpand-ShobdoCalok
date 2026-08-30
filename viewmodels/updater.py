@@ -15,28 +15,31 @@ The updater:
      that waits for the app to exit, swaps the program files, and relaunches.
 
 Features:
+  - IDM-style multi-threaded download (8 connections)
   - Resume interrupted downloads (HTTP Range)
   - Automatic retry on failure (3 attempts with backoff)
-  - SHA256 checksum verification
+  - SHA256 checksum verification with auto re-download on mismatch
   - Extraction progress tracking
+  - Cleans up update files after successful apply
 """
 
 import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QObject, Signal, Slot, Property
 
 try:
     from version import APP_VERSION, GITHUB_OWNER, GITHUB_REPO
-except Exception:  # pragma: no cover - fallback for odd import setups
+except Exception:
     APP_VERSION = "1.0.0"
     GITHUB_OWNER = "YOUR_GITHUB_USERNAME"
     GITHUB_REPO = "ShobdoCalok"
@@ -51,19 +54,15 @@ _HEADERS = {
 }
 
 MAX_RETRIES = 3
-RETRY_BACKOFF = [1, 3, 8]  # seconds between retries
+RETRY_BACKOFF = [1, 3, 8]
 
 
 def _find_github_token() -> str:
-    """Try to find a GitHub token for authenticated API requests."""
     for var in ("GITHUB_TOKEN", "GH_TOKEN"):
         tok = os.environ.get(var, "").strip()
         if tok:
             return tok
-
-    hosts = os.path.join(
-        os.path.expanduser("~"), ".config", "gh", "hosts.yml"
-    )
+    hosts = os.path.join(os.path.expanduser("~"), ".config", "gh", "hosts.yml")
     try:
         with open(hosts, encoding="utf-8") as f:
             for line in f:
@@ -72,7 +71,6 @@ def _find_github_token() -> str:
                     return line.split(":", 1)[1].strip().strip("'\"")
     except Exception:
         pass
-
     try:
         result = subprocess.run(
             ["gh", "auth", "token"],
@@ -84,7 +82,6 @@ def _find_github_token() -> str:
             return tok
     except Exception:
         pass
-
     return ""
 
 
@@ -94,7 +91,6 @@ if _token:
 
 
 def _version_tuple(v: str):
-    """Turn 'v1.2.3' or '1.2.3' into a comparable tuple of ints."""
     match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", v or "")
     if not match:
         return (0, 0, 0)
@@ -102,7 +98,6 @@ def _version_tuple(v: str):
 
 
 def _sha256_file(path: str) -> str:
-    """Compute SHA256 hex digest of a file."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
@@ -120,6 +115,7 @@ class UpdaterViewModel(QObject):
     statusMessage       = Signal(str)
     statusMessageTextChanged = Signal(str)
     updateAvailableChanged = Signal(bool)
+    downloadReadyChanged = Signal(bool)
 
     def __init__(self, data_dir: str, parent=None):
         super().__init__(parent)
@@ -132,16 +128,18 @@ class UpdaterViewModel(QObject):
         self._progress = 0.0
         self._latest_version = ""
         self._update_available = False
+        self._download_ready = False
         self._asset_url = ""
+        self._asset_name = ""
         self._checksum_url = ""
         self._release_url = ""
         self._status_message_text = ""
         self._download_lock = threading.Lock()
-        self._cached_zip_path = os.path.join(self._update_dir, "ShobdoCalok-latest.zip")
-        self._cached_checksum_path = os.path.join(self._update_dir, "ShobdoCalok-latest.sha256")
 
-        # If the cached ZIP matches current version, update was applied — clear stale state
-        self._clear_applied_state()
+        # Derived paths — set when we know the version/filename
+        self._zip_filename = ""
+        self._cached_zip_path = ""
+        self._cached_checksum_path = ""
 
     # ── Properties ─────────────────────────────────────────────────────────────
 
@@ -156,6 +154,11 @@ class UpdaterViewModel(QObject):
     @Property(bool, notify=updateAvailableChanged)
     def updateAvailable(self) -> bool:
         return self._update_available
+
+    @Property(bool, notify=downloadReadyChanged)
+    def downloadReady(self) -> bool:
+        """True when ZIP is fully downloaded, verified, and ready to install."""
+        return self._download_ready
 
     @Property(bool, notify=checkingChanged)
     def checking(self) -> bool:
@@ -179,34 +182,6 @@ class UpdaterViewModel(QObject):
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
-    def _clear_applied_state(self):
-        """If cached ZIP's version matches current, the update was applied.
-        Remove the ZIP so the next check starts fresh."""
-        try:
-            cached = os.path.join(self._update_dir, "ShobdoCalok-latest.zip")
-            if not os.path.exists(cached):
-                return
-            # Quick heuristic: if the cached ZIP is from the current version,
-            # delete it to avoid 'update available' false positives
-            # We check by looking at the ZIP's internal version.py
-            import zipfile
-            with zipfile.ZipFile(cached, "r") as zf:
-                for name in zf.namelist():
-                    if name.endswith("version.py") or name.endswith("version.pyc"):
-                        data = zf.read(name).decode("utf-8", errors="ignore")
-                        match = re.search(r'APP_VERSION\s*=\s*["\']([^"\']+)', data)
-                        if match:
-                            zip_ver = match.group(1)
-                            if _version_tuple(zip_ver) == _version_tuple(APP_VERSION):
-                                # Same version — update was applied, remove cache
-                                os.remove(cached)
-                                checksum = os.path.join(self._update_dir, "ShobdoCalok-latest.sha256")
-                                if os.path.exists(checksum):
-                                    os.remove(checksum)
-                        break
-        except Exception:
-            pass
-
     @property
     def _is_frozen(self) -> bool:
         return bool(getattr(sys, "frozen", False))
@@ -222,6 +197,38 @@ class UpdaterViewModel(QObject):
         self.statusMessageTextChanged.emit(msg)
         self.statusMessage.emit(msg)
 
+    def _set_paths_for_version(self, version: str, asset_name: str):
+        """Set zip/checksum paths based on the remote asset name."""
+        safe_name = asset_name.rsplit(".", 1)[0] if asset_name else f"ShobdoCalok-v{version}"
+        self._zip_filename = f"{safe_name}.zip"
+        self._cached_zip_path = os.path.join(self._update_dir, self._zip_filename)
+        self._cached_checksum_path = os.path.join(self._update_dir, f"{safe_name}.sha256")
+
+    def _cleanup_update_dir(self):
+        """Remove all update files (zip, chunks, extracted, bat, vbs, log)."""
+        try:
+            if os.path.exists(self._update_dir):
+                shutil.rmtree(self._update_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def _validate_zip(self, path: str) -> bool:
+        """Check ZIP exists, has reasonable size, and is not corrupt."""
+        if not os.path.exists(path):
+            return False
+        sz = os.path.getsize(path)
+        if sz < 1000:
+            return False
+        try:
+            with zipfile.ZipFile(path, "r") as zf:
+                # Quick test — read first few entries
+                bad = zf.testzip()
+                if bad is not None:
+                    return False
+        except Exception:
+            return False
+        return True
+
     # ── Check for updates ──────────────────────────────────────────────────────
 
     def _do_check(self):
@@ -231,9 +238,7 @@ class UpdaterViewModel(QObject):
             self._emit_status("Checking for updates…")
             resp = requests.get(RELEASES_API, headers=_HEADERS, timeout=30)
             if resp.status_code == 404:
-                self._emit_status(
-                    "No releases found yet. Updates are published as GitHub Releases."
-                )
+                self._emit_status("No releases found yet.")
                 return
             if resp.status_code != 200:
                 self._emit_status(f"Update check failed (HTTP {resp.status_code}).")
@@ -256,39 +261,25 @@ class UpdaterViewModel(QObject):
             remote = _version_tuple(latest)
             self._latest_version = latest
             self._release_url = data.get("html_url", "")
+            self._asset_url = zip_asset.get("browser_download_url", "") if zip_asset else ""
+            self._asset_name = zip_asset.get("name", "") if zip_asset else ""
+            self._checksum_url = checksum_asset.get("browser_download_url", "") if checksum_asset else ""
 
-            if zip_asset:
-                self._asset_url = zip_asset.get("browser_download_url", "")
-            else:
-                self._asset_url = ""
-
-            if checksum_asset:
-                self._checksum_url = checksum_asset.get("browser_download_url", "")
-            else:
-                self._checksum_url = ""
+            # Set paths based on actual asset filename
+            self._set_paths_for_version(latest, self._asset_name)
 
             if remote > current:
-                # Double-check: if we already have this ZIP cached, the user
-                # may have already applied it manually or via a previous run
-                if os.path.exists(self._cached_zip_path):
-                    # Check if cached ZIP matches the remote version
-                    try:
-                        import zipfile as _zf
-                        with _zf.ZipFile(self._cached_zip_path, "r") as zf:
-                            for name in zf.namelist():
-                                if name.endswith("version.py") or name.endswith("version.pyc"):
-                                    data = zf.read(name).decode("utf-8", errors="ignore")
-                                    match = re.search(r'APP_VERSION\s*=\s*["\']([^"\']+)', data)
-                                    if match and _version_tuple(match.group(1)) == current:
-                                        # Cached ZIP has same version as running — already applied
-                                        os.remove(self._cached_zip_path)
-                                        if os.path.exists(self._cached_checksum_path):
-                                            os.remove(self._cached_checksum_path)
-                                        self._emit_status(f"You're up to date (version {APP_VERSION}).")
-                                        return
-                                    break
-                    except Exception:
-                        pass
+                # Check if we already have a valid ZIP for this version
+                if self._validate_zip(self._cached_zip_path):
+                    self._emit_status(f"Update v{latest} already downloaded — ready to install.")
+                    self._download_ready = True
+                    self.downloadReadyChanged.emit(True)
+                else:
+                    # Clean up any stale update files from different versions
+                    self._cleanup_update_dir()
+                    os.makedirs(self._update_dir, exist_ok=True)
+                    self._download_ready = False
+                    self.downloadReadyChanged.emit(False)
 
                 self._update_available = True
                 self.updateAvailableChanged.emit(True)
@@ -304,49 +295,49 @@ class UpdaterViewModel(QObject):
         finally:
             self._set_checking(False)
 
-    # ── Download (with resume + retry) ─────────────────────────────────────────
+    # ── Download (IDM-style multi-threaded) ────────────────────────────────────
 
     def _download_with_resume(self, url: str, dest: str) -> bool:
-        """IDM-style multi-threaded download with resume support.
-
-        Splits the file into chunks and downloads them in parallel using
-        multiple threads. Falls back to single-threaded if server doesn't
-        support Range requests.
-        """
+        """IDM-style multi-threaded download with resume + corruption detection."""
         import requests
 
         THREADS = 8
-        CHUNK_MB = 4
 
         for attempt in range(MAX_RETRIES):
             try:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+                # GET request to determine total size (follows redirects, unlike HEAD)
+                probe = requests.get(url, headers=_HEADERS, stream=True, timeout=30)
+                total_size = int(probe.headers.get("Content-Length", 0))
+                accept_ranges = probe.headers.get("Accept-Ranges", "") == "bytes"
+                probe.close()
+
+                if total_size == 0:
+                    # Fallback: try single-threaded (will get size from response)
+                    return self._download_single_thread(url, dest)
+
                 existing_size = 0
                 if os.path.exists(dest):
                     existing_size = os.path.getsize(dest)
 
-                # HEAD request to get file size and check Range support
-                head = requests.head(url, headers=_HEADERS, timeout=30, allow_redirects=True)
-                total_size = int(head.headers.get("Content-Length", 0))
-                accept_ranges = head.headers.get("Accept-Ranges", "") == "bytes"
-
-                if total_size == 0:
-                    self._emit_status("Could not determine file size.")
-                    return False
-
-                # If file already fully downloaded
+                # Already complete
                 if existing_size >= total_size:
-                    self._set_progress(1.0)
-                    self._emit_status("File already downloaded.")
-                    return True
+                    if self._validate_zip(dest):
+                        self._set_progress(1.0)
+                        self._emit_status("File already downloaded.")
+                        return True
+                    else:
+                        existing_size = 0  # Corrupt — re-download
 
-                # Single-threaded fallback if server doesn't support Range
-                if not accept_ranges or total_size < 1 << 20:
-                    return self._download_single_thread(url, dest, total_size)
+                # Single-threaded fallback if no Range support
+                if not accept_ranges:
+                    return self._download_single_thread(url, dest)
 
                 # ── Multi-threaded download ──────────────────────────
-                chunk_size = max(CHUNK_MB << 20, total_size // THREADS + 1)
+                chunk_size = max(4 << 20, total_size // THREADS + 1)
                 ranges = []
-                start = existing_size
+                start = 0
                 while start < total_size:
                     end = min(start + chunk_size - 1, total_size - 1)
                     ranges.append((start, end))
@@ -380,7 +371,7 @@ class UpdaterViewModel(QObject):
 
                     mode = "ab" if sz > 0 else "wb"
                     with open(chunk_file, mode) as f:
-                        for data in r.iter_content(chunk_size=1 << 20):
+                        for data in r.iter_content(chunk_size=2 << 20):
                             if data:
                                 f.write(data)
                                 with done_lock:
@@ -394,34 +385,36 @@ class UpdaterViewModel(QObject):
                         for i, (s, e) in enumerate(ranges)
                     ]
 
-                    # Progress reporter thread
                     def report_progress():
+                        last_done = 0
+                        speed_smooth = 0.0
                         while not all(f.done() for f in futures):
                             elapsed = time.monotonic() - t0
-                            speed = (done_bytes / elapsed / (1 << 20)) if elapsed > 0 else 0
-                            self._set_progress(min(done_bytes / total_size, 0.99))
+                            with done_lock:
+                                current_done = done_bytes
+                            instant_speed = (current_done - last_done) / max(elapsed, 0.01) / (1 << 20)
+                            speed_smooth = speed_smooth * 0.7 + instant_speed * 0.3
+                            last_done = current_done
+                            self._set_progress(min(current_done / total_size, 0.99))
                             self._emit_status(
-                                f"Downloading… {done_bytes >> 20}/{total_size >> 20} MB "
-                                f"({speed:.1f} MB/s)"
+                                f"Downloading… {current_done >> 20}/{total_size >> 20} MB "
+                                f"({speed_smooth:.1f} MB/s)"
                             )
                             time.sleep(0.5)
                     reporter = threading.Thread(target=report_progress, daemon=True)
                     reporter.start()
-
                     results = [f.result() for f in futures]
                     reporter.join(timeout=2)
 
                 if not all(results):
-                    self._emit_status("Some chunks failed to download.")
-                    # Clean up partial chunks
-                    import shutil
+                    self._emit_status("Some chunks failed. Retrying…")
                     shutil.rmtree(tmp_dir, ignore_errors=True)
                     if attempt < MAX_RETRIES - 1:
                         time.sleep(RETRY_BACKOFF[attempt])
                         continue
                     return False
 
-                # ── Reassemble chunks ────────────────────────────────
+                # ── Reassemble ───────────────────────────────────────
                 self._emit_status("Reassembling download…")
                 with open(dest, "wb") as out:
                     for i in range(len(ranges)):
@@ -432,9 +425,19 @@ class UpdaterViewModel(QObject):
                                 if not data:
                                     break
                                 out.write(data)
-
-                import shutil
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+
+                # Validate the reassembled file
+                if not self._validate_zip(dest):
+                    self._emit_status("Downloaded file is corrupted.")
+                    try:
+                        os.remove(dest)
+                    except Exception:
+                        pass
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(RETRY_BACKOFF[attempt])
+                        continue
+                    return False
 
                 elapsed = time.monotonic() - t0
                 speed = (total_size / elapsed / (1 << 20)) if elapsed > 0 else 0
@@ -445,10 +448,7 @@ class UpdaterViewModel(QObject):
             except Exception as e:
                 if attempt < MAX_RETRIES - 1:
                     wait = RETRY_BACKOFF[attempt]
-                    self._emit_status(
-                        f"Download failed: {e}. Retrying in {wait}s…"
-                        f" ({attempt + 1}/{MAX_RETRIES})"
-                    )
+                    self._emit_status(f"Download failed: {e}. Retrying in {wait}s… ({attempt + 1}/{MAX_RETRIES})")
                     time.sleep(wait)
                 else:
                     self._emit_status(f"Download failed after {MAX_RETRIES} attempts: {e}")
@@ -456,66 +456,75 @@ class UpdaterViewModel(QObject):
 
         return False
 
-    def _download_single_thread(self, url: str, dest: str, total_size: int) -> bool:
-        """Fallback single-threaded download."""
+    def _download_single_thread(self, url: str, dest: str) -> bool:
+        """Fallback single-threaded download with resume."""
         import requests
 
-        session = requests.Session()
-        session.headers.update(_HEADERS)
-
-        try:
-            existing_size = 0
-            if os.path.exists(dest):
-                existing_size = os.path.getsize(dest)
-
-            req_headers = {}
-            if existing_size > 0:
-                req_headers["Range"] = f"bytes={existing_size}-"
-
-            r = session.get(url, headers=req_headers, stream=True, timeout=(30, 120))
-            if r.status_code == 416:
-                self._set_progress(1.0)
-                return True
-            if r.status_code == 200:
+        for attempt in range(MAX_RETRIES):
+            try:
                 existing_size = 0
-            elif r.status_code == 206:
-                pass
-            else:
-                r.raise_for_status()
+                if os.path.exists(dest):
+                    existing_size = os.path.getsize(dest)
 
-            total = int(r.headers.get("Content-Length", 0)) + existing_size
-            done = existing_size
-            t0 = time.monotonic()
-            bytes_since = 0
+                req_headers = dict(_HEADERS)
+                if existing_size > 0:
+                    req_headers["Range"] = f"bytes={existing_size}-"
 
-            mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
-            with open(dest, mode) as f:
-                for chunk in r.iter_content(chunk_size=2 << 20):
-                    if not chunk:
+                r = requests.get(url, headers=req_headers, stream=True, timeout=(30, 120))
+                if r.status_code == 416:
+                    self._set_progress(1.0)
+                    return True
+                if r.status_code == 200:
+                    existing_size = 0
+                elif r.status_code == 206:
+                    pass
+                else:
+                    r.raise_for_status()
+
+                total = int(r.headers.get("Content-Length", 0)) + existing_size
+                done = existing_size
+                t0 = time.monotonic()
+                bytes_since = 0
+
+                mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
+                with open(dest, mode) as f:
+                    for chunk in r.iter_content(chunk_size=2 << 20):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        done += len(chunk)
+                        bytes_since += len(chunk)
+                        if total:
+                            self._set_progress(min(done / total, 1.0))
+                        elapsed = time.monotonic() - t0
+                        if elapsed >= 0.5 and bytes_since:
+                            speed = bytes_since / elapsed / (1 << 20)
+                            self._emit_status(f"Downloading… {done >> 20}/{total >> 20} MB ({speed:.1f} MB/s)")
+                            t0 = time.monotonic()
+                            bytes_since = 0
+
+                r.close()
+
+                if not self._validate_zip(dest):
+                    self._emit_status("Downloaded file is corrupted.")
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(RETRY_BACKOFF[attempt])
                         continue
-                    f.write(chunk)
-                    done += len(chunk)
-                    bytes_since += len(chunk)
-                    if total:
-                        self._set_progress(min(done / total, 1.0))
-                    elapsed = time.monotonic() - t0
-                    if elapsed >= 0.5 and bytes_since:
-                        speed = bytes_since / elapsed / (1 << 20)
-                        self._emit_status(
-                            f"Downloading… {done >> 20}/{total >> 20} MB ({speed:.1f} MB/s)"
-                        )
-                        t0 = time.monotonic()
-                        bytes_since = 0
+                    return False
 
-            r.close()
-            return True
-        finally:
-            session.close()
+                return True
+            except Exception as e:
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_BACKOFF[attempt])
+                else:
+                    self._emit_status(f"Download failed: {e}")
+                    return False
+
+        return False
 
     # ── Extract with progress ──────────────────────────────────────────────────
 
     def _extract_with_progress(self, zip_path: str, extract_to: str) -> bool:
-        """Extract ZIP file with progress tracking. Returns True on success."""
         try:
             with zipfile.ZipFile(zip_path, "r") as zf:
                 members = zf.namelist()
@@ -523,15 +532,11 @@ class UpdaterViewModel(QObject):
                 if total == 0:
                     self._emit_status("Update archive is empty.")
                     return False
-
                 for i, member in enumerate(members):
                     zf.extract(member, extract_to)
                     self._set_progress((i + 1) / total)
                     if (i + 1) % 50 == 0 or i + 1 == total:
-                        self._emit_status(
-                            f"Extracting… {i + 1}/{total} files"
-                        )
-
+                        self._emit_status(f"Extracting… {i + 1}/{total} files")
             return True
         except zipfile.BadZipFile:
             self._emit_status("Downloaded file is corrupted. Please re-download.")
@@ -543,7 +548,6 @@ class UpdaterViewModel(QObject):
     # ── Verify checksum ────────────────────────────────────────────────────────
 
     def _verify_checksum(self, zip_path: str) -> bool:
-        """Download .sha256 file and verify the ZIP checksum. Returns True if valid."""
         if not self._checksum_url:
             self._emit_status("No checksum file available — skipping verification.")
             return True
@@ -558,23 +562,20 @@ class UpdaterViewModel(QObject):
                     self._emit_status("Could not download checksum — skipping verification.")
                     return True
 
-                # Save the checksum file locally for future caching
                 try:
                     with open(self._cached_checksum_path, "w") as f:
                         f.write(resp.text)
                 except Exception:
                     pass
 
-                # Parse the .sha256 file
                 text = resp.text.strip()
                 if not text:
                     self._emit_status("Checksum file is empty — skipping verification.")
                     return True
                 expected_hash = text.split()[0].strip().lower()
 
-                # Validate hash format (should be 64 hex chars)
                 if len(expected_hash) != 64 or not all(c in "0123456789abcdef" for c in expected_hash):
-                    self._emit_status(f"Invalid checksum format — skipping.")
+                    self._emit_status("Invalid checksum format — skipping.")
                     return True
 
                 actual_hash = _sha256_file(zip_path)
@@ -584,20 +585,14 @@ class UpdaterViewModel(QObject):
                     return True
                 else:
                     if verify_attempt == 0:
-                        self._emit_status(
-                            f"Checksum mismatch — re-downloading…"
-                        )
-                        # Delete corrupt file so it re-downloads
+                        self._emit_status("Checksum mismatch — re-downloading…")
                         try:
                             os.remove(zip_path)
                         except Exception:
                             pass
-                        # Re-download
                         if self._download_with_resume(self._asset_url, zip_path):
                             continue
-                    self._emit_status(
-                        f"Checksum mismatch but proceeding — file may still work."
-                    )
+                    self._emit_status("Checksum mismatch but proceeding — file may still work.")
                     return True
 
             except Exception as e:
@@ -615,10 +610,7 @@ class UpdaterViewModel(QObject):
         try:
             import requests
             if not self._is_frozen:
-                self._emit_status(
-                    "Updates can only be installed in the packaged app. "
-                    "Run from the built EXE to update."
-                )
+                self._emit_status("Updates can only be installed in the packaged app.")
                 return
             if not self._asset_url:
                 self._emit_status("No update asset found to download.")
@@ -627,56 +619,43 @@ class UpdaterViewModel(QObject):
             os.makedirs(self._update_dir, exist_ok=True)
             zip_path = self._cached_zip_path
 
-            # ── Phase 1: Check for cached ZIP ────────────────────────────
-            cached_valid = False
-            if os.path.exists(zip_path) and os.path.getsize(zip_path) > 1000:
-                cached_checksum = self._cached_checksum_path
-                if os.path.exists(cached_checksum):
-                    try:
-                        with open(cached_checksum, "r") as f:
-                            expected = f.read().strip().split()[0].lower()
-                        actual = _sha256_file(zip_path)
-                        if actual == expected:
-                            cached_valid = True
-                            self._emit_status("Using cached update (checksum OK).")
-                    except Exception:
-                        pass
-
-            # ── Phase 2: Download with resume + retry ────────────────────
-            if not cached_valid:
+            # ── Phase 1: Check for valid cached ZIP ────────────────────
+            if self._download_ready and self._validate_zip(zip_path):
+                self._emit_status("Using previously downloaded update.")
+                self._set_progress(1.0)
+            elif os.path.exists(zip_path) and self._validate_zip(zip_path):
+                self._emit_status("Using cached update file.")
+                self._set_progress(1.0)
+            else:
+                # ── Phase 2: Download ──────────────────────────────────
                 self._set_downloading(True)
                 self._set_progress(0.0)
                 self._emit_status("Downloading update…")
 
                 if not self._download_with_resume(self._asset_url, zip_path):
                     return
-
-                self._set_progress(1.0)
-            else:
                 self._set_progress(1.0)
 
-            # ── Phase 3: Verify checksum ─────────────────────────────────
+            # ── Phase 3: Verify checksum ───────────────────────────────
             if not self._verify_checksum(zip_path):
                 self._emit_status("Update aborted due to checksum failure.")
                 return
 
             self._set_downloading(False)
 
-            # ── Phase 4: Extract with progress ───────────────────────────
+            # ── Phase 4: Extract ───────────────────────────────────────
             self._emit_status("Extracting update…")
             extract_to = os.path.join(self._update_dir, "extracted")
             if os.path.exists(extract_to):
-                import shutil
                 shutil.rmtree(extract_to, ignore_errors=True)
             os.makedirs(extract_to, exist_ok=True)
 
             self._set_progress(0.0)
             if not self._extract_with_progress(zip_path, extract_to):
                 return
-
             self._set_progress(1.0)
 
-            # ── Phase 5: Locate new app and apply ────────────────────────
+            # ── Phase 5: Apply ─────────────────────────────────────────
             new_root = self._find_new_app_root(extract_to)
             if not new_root:
                 self._emit_status("Update file did not contain the app. Please re-download.")
@@ -703,7 +682,6 @@ class UpdaterViewModel(QObject):
             self._download_lock.release()
 
     def _find_new_app_root(self, extract_to: str):
-        """Find the folder that holds the new ShobdoCalok.exe inside the zip."""
         candidates = []
         for root, _dirs, files in os.walk(extract_to):
             if "ShobdoCalok.exe" in files:
@@ -713,16 +691,17 @@ class UpdaterViewModel(QObject):
         return min(candidates, key=lambda p: p.count(os.sep))
 
     def _launch_applier(self, new_root: str, extract_to: str, zip_path: str):
-        """Write a batch script + VBScript wrapper that swaps files silently after exit."""
         app_root = self._app_root
-        bat = os.path.join(self._update_dir, "apply_update.bat")
-        vbs = os.path.join(self._update_dir, "apply_update.vbs")
-        log_file = os.path.join(self._update_dir, "update_log.txt")
+        update_dir = self._update_dir
+        bat = os.path.join(update_dir, "apply_update.bat")
+        vbs = os.path.join(update_dir, "apply_update.vbs")
+        log_file = os.path.join(update_dir, "update_log.txt")
 
         batch_script = f"""@echo off
 setlocal enabledelayedexpansion
 set "APP={app_root}"
 set "NEW={new_root}"
+set "UPDATE={update_dir}"
 set "TMPEXTRACT={extract_to}"
 set "LOG={log_file}"
 
@@ -763,15 +742,15 @@ if "!LAUNCH_EXE!"=="1" (
 echo [4/4] App started. >> "%LOG%"
 
 :cleanup
-echo Cleaning up... >> "%LOG%"
+echo Cleaning up update files... >> "%LOG%"
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
+if exist "%UPDATE%" rmdir /s /q "%UPDATE%"
 del "%~f0" 2>nul
 del "{vbs}" 2>nul
 """
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
             f.write(batch_script.replace("\n", "\r\n"))
 
-        # VBScript wrapper — runs the batch silently (window style 0 = hidden)
         vbs_script = (
             'Set objShell = CreateObject("WScript.Shell")\n'
             f'objShell.Run "cmd /c ""{bat}""", 0, False\n'
@@ -779,12 +758,10 @@ del "{vbs}" 2>nul
         with open(vbs, "w", encoding="ascii", errors="ignore") as f:
             f.write(vbs_script)
 
-        # Launch VBScript (hidden, detached)
         try:
             import ctypes
-            SW_SHOWNORMAL = 1
             result = ctypes.windll.shell32.ShellExecuteW(
-                None, "open", vbs, None, self._update_dir, SW_SHOWNORMAL
+                None, "open", vbs, None, update_dir, 1
             )
             if result <= 32:
                 raise RuntimeError(f"ShellExecuteW returned {result}")
@@ -792,8 +769,7 @@ del "{vbs}" 2>nul
             try:
                 subprocess.Popen(
                     f'start "" "{vbs}"',
-                    shell=True,
-                    cwd=self._update_dir,
+                    shell=True, cwd=update_dir,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             except Exception as e2:

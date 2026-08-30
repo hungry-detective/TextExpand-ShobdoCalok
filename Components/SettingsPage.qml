@@ -166,7 +166,9 @@ Item {
                                    ? "Applying…"
                                    : (updaterViewModel.downloading
                                       ? Math.round(updaterViewModel.progress * 100) + "%"
-                                      : (updaterViewModel.updateAvailable ? "Download" : "Check"))
+                                      : (updaterViewModel.updateAvailable
+                                         ? (updaterViewModel.downloadReady ? "Install" : "Download")
+                                         : "Check"))
                         buttonEnabled: !updaterViewModel.downloading && !updaterViewModel.checking && !updaterViewModel.applying
                         onToggled: (value) => {
                             if (!updaterViewModel) return

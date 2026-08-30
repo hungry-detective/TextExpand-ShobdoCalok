@@ -210,6 +210,8 @@ Item {
                         if (updaterViewModel.downloading)
                             return "Downloading… " + Math.round(updaterViewModel.progress * 100) + "%"
                         if (updaterViewModel.checking) return "Checking…"
+                        if (updaterViewModel.updateAvailable && updaterViewModel.downloadReady)
+                            return "Install v" + updaterViewModel.latestVersion
                         if (updaterViewModel.updateAvailable)
                             return "Update v" + updaterViewModel.latestVersion + " (you have " + (typeof updaterViewModel.currentVersion !== "undefined" ? updaterViewModel.currentVersion : "?") + ")"
                         return "Check for Updates"
