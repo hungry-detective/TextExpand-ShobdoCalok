@@ -582,7 +582,7 @@ if exist "%NEW%\\ShobdoCalok.exe" (
 )
 
 echo [3/4] Copying new files...
-robocopy "%NEW%" "%APP%" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP
+robocopy "%NEW%" "%APP%" /E /XD AppData /NFL /NDL /NJH /NJS /NC /NS /NP
 set RC=!errorlevel!
 echo [3/4] Copy finished ^(errorlevel !RC!^)
 
