@@ -703,6 +703,14 @@ class UpdaterViewModel(QObject):
 
         batch_script = f"""@echo off
 setlocal enabledelayedexpansion
+title ShobdoCalok Updater
+color 0B
+cls
+echo.
+echo  ==========================================
+echo     ShobdoCalok Updater
+echo  ==========================================
+echo.
 set "APP={app_root}"
 set "NEW={new_root}"
 set "UPDATE={update_dir}"
@@ -715,33 +723,52 @@ echo APP=%APP% >> "%LOG%"
 echo NEW=%NEW% >> "%LOG%"
 echo. >> "%LOG%"
 
-echo [1/4] Killing app process... >> "%LOG%"
+echo  [1/4] Stopping ShobdoCalok...
+echo  [1/4] Killing app process... >> "%LOG%"
 taskkill /F /IM ShobdoCalok.exe 2>nul >> "%LOG%"
+echo  Waiting for files to unlock...
 timeout /t 3 /nobreak >nul
+echo  [1/4] Process stopped.
 echo [1/4] Process killed. >> "%LOG%"
 
+echo.
+echo  [2/4] Checking update files...
 echo [2/4] Checking source... >> "%LOG%"
 if exist "%NEW%\\ShobdoCalok.exe" (
+    echo  [2/4] Update files found (packaged)
     echo [2/4] Source OK ^(packaged^) >> "%LOG%"
     set "LAUNCH_EXE=1"
 ) else if exist "%NEW%\\main.py" (
+    echo  [2/4] Update files found (source mode)
     echo [2/4] Source OK ^(source mode^) >> "%LOG%"
     set "LAUNCH_EXE=0"
 ) else (
+    echo  [2/4] ERROR: No update files found!
     echo [2/4] ERROR: No app found in: %NEW% >> "%LOG%"
-    goto start_app
+    echo.
+    echo  Press any key to close...
+    pause >nul
+    goto cleanup
 )
 
+echo.
+echo  [3/4] Installing update...
+echo  Copying new files (this may take a moment)...
 echo [3/4] Copying new files... >> "%LOG%"
 robocopy "%NEW%" "%APP%" /E /XD AppData /NFL /NDL /NJH /NJS /NC /NS /NP
 set RC=!errorlevel!
+echo  [3/4] Copy finished (exit code !RC!)
 echo [3/4] Copy finished ^(errorlevel !RC!^) >> "%LOG%"
 if !RC! GEQ 8 (
+    echo  [3/4] WARNING: robocopy had issues, trying alternate method...
     echo [3/4] WARNING: robocopy had errors, trying xcopy... >> "%LOG%"
     xcopy "%NEW%\\*" "%APP%\\" /E /Y /Q >> "%LOG%" 2>nul
+    echo  [3/4] Alternate copy completed.
 )
 
 :start_app
+echo.
+echo  [4/4] Starting ShobdoCalok...
 echo [4/4] Starting app... >> "%LOG%"
 if "!LAUNCH_EXE!"=="1" (
     start "" "%APP%\\ShobdoCalok.exe"
@@ -750,9 +777,14 @@ if "!LAUNCH_EXE!"=="1" (
 ) else (
     start "" "%APP%\\ShobdoCalok.exe"
 )
+echo  [4/4] App started!
 echo [4/4] App started. >> "%LOG%"
 
-timeout /t 2 /nobreak >nul
+echo.
+echo  Update complete! Closing in 3 seconds...
+timeout /t 3 /nobreak >nul
+
+:cleanup
 echo Cleaning up update files... >> "%LOG%"
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
 if exist "%UPDATE%" rmdir /s /q "%UPDATE%"
@@ -763,7 +795,7 @@ del "%~f0" 2>nul
 
         vbs_script = (
             'Set objShell = CreateObject("WScript.Shell")\n'
-            f'objShell.Run "cmd /c ""{bat}""", 0, False\n'
+            f'objShell.Run "cmd /c ""{bat}""", 1, False\n'
         )
         with open(vbs, "w", encoding="ascii", errors="ignore") as f:
             f.write(vbs_script)

@@ -675,3 +675,39 @@ class GoogleDriveViewModel(QObject):
             finally:
                 self._set_busy(False)
         threading.Thread(target=_worker, daemon=True).start()
+
+    @Slot()
+    def deleteOldBackups(self):
+        """Delete all timestamped history backups, keep only the latest."""
+        def _worker():
+            try:
+                self._set_busy(True)
+                if not self._creds:
+                    raise RuntimeError("Not signed in")
+                token = self._access_token()
+                # Find all history backups
+                import requests
+                params = {
+                    "q": f"name contains '{BACKUP_HISTORY_PREFIX}' and trashed=false",
+                    "spaces": "appDataFolder",
+                    "fields": "files(id, name)",
+                    "pageSize": "50",
+                }
+                resp = requests.get(
+                    url=DRIVE_FILES_URL, params=params,
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Drive search failed: {resp.status_code}")
+                files = resp.json().get("files", [])
+                count = 0
+                for f in files:
+                    self._delete_file(token, f["id"])
+                    count += 1
+                self.statusMessage.emit(f"Deleted {count} old backup(s)")
+            except Exception as e:
+                self.statusMessage.emit(f"Delete error: {e}")
+            finally:
+                self._set_busy(False)
+        threading.Thread(target=_worker, daemon=True).start()

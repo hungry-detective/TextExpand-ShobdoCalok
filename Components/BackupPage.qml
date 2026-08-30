@@ -220,43 +220,95 @@ Item {
         }
     }
 
-    // ── Confirmation dialog before backup ────────────────────────────────────
+    // ── Backup options dialog ────────────────────────────────────────────────
     Dialog {
         id: backupConfirmDialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 380; height: contentHeight + 40
+        width: 400; height: contentHeight + 40
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
         contentItem: ColumnLayout {
             spacing: 16; anchors.margins: 20
+
             Text {
-                text: "Overwrite Backup?"
+                text: "Backup Options"
                 font.family: "Inter"; font.pixelSize: 16; font.bold: true
                 color: AppTheme.textPrimary
             }
             Text {
-                text: "This will replace your existing backup on Google Drive. Your previous backup will be saved as a history copy, but to be safe, are you sure?"
+                text: "Choose how to save your snippets to Google Drive:"
                 font.family: "Inter"; font.pixelSize: 12
                 color: AppTheme.textSecondary; wrapMode: Text.Wrap; Layout.fillWidth: true
             }
+            Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
+
+            // Option 1: Create New (keeps old as history)
+            Rectangle {
+                Layout.fillWidth: true; height: 56; radius: 10
+                color: opt1Hover.hovered ? AppTheme.primaryLight : "transparent"
+                border.color: AppTheme.primary; border.width: 1
+                HoverHandler { id: opt1Hover }
+                MouseArea {
+                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        backupConfirmDialog.close()
+                        driveViewModel.backup()
+                    }
+                }
+                RowLayout {
+                    anchors.fill: parent; anchors.margins: 10; spacing: 10
+                    Rectangle {
+                        width: 32; height: 32; radius: 8
+                        color: AppTheme.primaryLight
+                        Text { anchors.centerIn: parent; text: "add"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: AppTheme.primary }
+                    }
+                    ColumnLayout { spacing: 2
+                        Text { text: "Create New Backup"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: AppTheme.textPrimary }
+                        Text { text: "Saves current backup, old one kept as history"; font.family: "Inter"; font.pixelSize: 10; color: AppTheme.textSecondary }
+                    }
+                }
+            }
+
+            // Option 2: Delete old backups
+            Rectangle {
+                Layout.fillWidth: true; height: 56; radius: 10
+                color: opt2Hover.hovered ? "#fef2f2" : "transparent"
+                border.color: "#ef4444"; border.width: 1
+                HoverHandler { id: opt2Hover }
+                MouseArea {
+                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        backupConfirmDialog.close()
+                        driveViewModel.deleteOldBackups()
+                    }
+                }
+                RowLayout {
+                    anchors.fill: parent; anchors.margins: 10; spacing: 10
+                    Rectangle {
+                        width: 32; height: 32; radius: 8
+                        color: "#fef2f2"
+                        Text { anchors.centerIn: parent; text: "delete_sweep"; font.family: "Material Symbols Outlined"; font.pixelSize: 18; color: "#ef4444" }
+                    }
+                    ColumnLayout { spacing: 2
+                        Text { text: "Delete Old Backups"; font.family: "Inter"; font.pixelSize: 12; font.bold: true; color: "#ef4444" }
+                        Text { text: "Remove all history copies, keep only latest"; font.family: "Inter"; font.pixelSize: 10; color: AppTheme.textSecondary }
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: AppTheme.textSecondary; opacity: 0.15 }
+
             RowLayout {
-                Layout.fillWidth: true; spacing: 10
+                Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 Rectangle {
                     width: 80; height: 32; radius: 8
-                    color: cancelHover.hovered ? AppTheme.hoverBg : "transparent"
+                    color: backupCancelHover.hovered ? AppTheme.hoverBg : "transparent"
                     border.color: AppTheme.textSecondary; border.width: 1
-                    HoverHandler { id: cancelHover }
+                    HoverHandler { id: backupCancelHover }
                     TapHandler { onTapped: backupConfirmDialog.close() }
                     Text { anchors.centerIn: parent; text: "Cancel"; font.family: "Inter"; font.pixelSize: 11; color: AppTheme.textSecondary }
-                }
-                Rectangle {
-                    width: 100; height: 32; radius: 8
-                    color: confirmHover.hovered ? AppTheme.primaryHover : AppTheme.primary
-                    HoverHandler { id: confirmHover }
-                    TapHandler { onTapped: { backupConfirmDialog.close(); driveViewModel.backup() } }
-                    Text { anchors.centerIn: parent; text: "Yes, Backup"; font.family: "Inter"; font.pixelSize: 11; font.bold: true; color: "white" }
                 }
             }
         }
@@ -270,7 +322,7 @@ Item {
         width: 420; height: Math.min(500, backupList.contentHeight + 120)
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
-        onOpened: { backupListModel.clear() }
+        onOpened: { backupListModel.clear(); driveViewModel.listBackups() }
         contentItem: ColumnLayout {
             spacing: 12; anchors.margins: 20
             Text {
@@ -290,32 +342,71 @@ Item {
                 clip: true; spacing: 4
                 model: ListModel { id: backupListModel }
                 delegate: Rectangle {
-                    Layout.fillWidth: true; height: 44; radius: 8
+                    id: backupItem
+                    width: backupList.width; height: 48; radius: 8
                     color: itemHover.hovered ? AppTheme.primaryLight : "transparent"
+                    property string fileId: model.id
+                    property int itemIndex: index
+
                     HoverHandler { id: itemHover }
+
                     RowLayout {
-                        anchors.fill: parent; anchors.margins: 8; spacing: 8
-                        Text {
-                            text: "history"
-                            font.family: "Material Symbols Outlined"; font.pixelSize: 18
-                            color: index === 0 ? AppTheme.primary : AppTheme.textSecondary
+                        anchors.fill: parent; anchors.margins: 10; spacing: 10
+                        Rectangle {
+                            width: 32; height: 32; radius: 8
+                            color: backupItem.itemIndex === 0 ? AppTheme.primaryLight : (AppTheme.isDark ? "#2a2d35" : "#f1f5f9")
+                            Text {
+                                anchors.centerIn: parent
+                                text: backupItem.itemIndex === 0 ? "cloud_done" : "history"
+                                font.family: "Material Symbols Outlined"; font.pixelSize: 16
+                                color: backupItem.itemIndex === 0 ? AppTheme.primary : AppTheme.textSecondary
+                            }
                         }
-                        Text {
-                            text: model.label
-                            font.family: "Inter"; font.pixelSize: 12
-                            color: AppTheme.textPrimary; elide: Text.ElideRight
-                            Layout.fillWidth: true
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 2
+                            Text {
+                                text: backupItem.itemIndex === 0 ? "Latest Backup" : "Previous Backup"
+                                font.family: "Inter"; font.pixelSize: 12; font.bold: true
+                                color: AppTheme.textPrimary
+                            }
+                            Text {
+                                text: model.label
+                                font.family: "Inter"; font.pixelSize: 10
+                                color: AppTheme.textSecondary; elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+                        Rectangle {
+                            width: 60; height: 26; radius: 6
+                            color: restoreItemHover.hovered ? AppTheme.primaryHover : AppTheme.primary
+                            HoverHandler { id: restoreItemHover }
+                            Text {
+                                anchors.centerIn: parent; text: "RESTORE"
+                                font.family: "Inter"; font.pixelSize: 9; font.bold: true; color: "white"
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    restorePicker.close()
+                                    if (backupItem.itemIndex === 0) {
+                                        driveViewModel.restore()
+                                    } else {
+                                        driveViewModel.restoreFromFile(backupItem.fileId)
+                                    }
+                                }
+                            }
                         }
                     }
-                    TapHandler {
-                        onTapped: {
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
                             restorePicker.close()
-                            if (index === 0) {
-                                // Latest backup - use default restore
+                            if (backupItem.itemIndex === 0) {
                                 driveViewModel.restore()
                             } else {
-                                // Historical backup - restore by file ID
-                                driveViewModel.restoreFromFile(model.id)
+                                driveViewModel.restoreFromFile(backupItem.fileId)
                             }
                         }
                     }
