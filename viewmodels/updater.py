@@ -704,17 +704,14 @@ class UpdaterViewModel(QObject):
         batch_script = f"""@echo off
 setlocal enabledelayedexpansion
 title ShobdoCalok Updater
-mode con: cols=60 lines=24
+mode con: cols=70 lines=30
 color 0B
-
-REM Center the window
-powershell -Command "$h=Get-Host;$w=$h.UI.RawUI.WindowSize;$b=$h.UI.RawUI.BufferSize;$b.Width=60;$h.UI.RawUI.BufferSize=$b;$x=[int](([System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Width-$w.Width)/2);$y=[int](([System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Height-$w.Height)/2);$h.UI.RawUI.WindowPosition=New-Object System.Management.Automation.Host.Coordinates($x,$y)" 2>nul
 
 cls
 echo.
-echo  ==========================================
-echo     ShobdoCalok Updater
-echo  ==========================================
+echo  ============================================
+echo       ShobdoCalok Updater v1.0.19
+echo  ============================================
 echo.
 set "APP={app_root}"
 set "NEW={new_root}"
@@ -729,62 +726,62 @@ echo NEW=%NEW% >> "%LOG%"
 echo. >> "%LOG%"
 
 echo  [1/4] Stopping ShobdoCalok...
-echo  [1/4] Killing app process... >> "%LOG%"
 taskkill /F /IM ShobdoCalok.exe 2>nul >> "%LOG%"
 echo  Waiting for files to unlock...
 timeout /t 3 /nobreak >nul
 echo  [1/4] Process stopped.
-echo [1/4] Process killed. >> "%LOG%"
-
 echo.
+
 echo  [2/4] Checking update files...
-echo [2/4] Checking source... >> "%LOG%"
+echo  Source: %NEW%
+echo [2/4] Checking source: %NEW% >> "%LOG%"
 set "LAUNCH_EXE="
-if exist "%NEW%\\ShobdoCalok.exe" set "LAUNCH_EXE=1"
-if "!LAUNCH_EXE!"=="" if exist "%NEW%\\main.py" set "LAUNCH_EXE=0"
+if exist "%NEW%\ShobdoCalok.exe" set "LAUNCH_EXE=1"
+if "!LAUNCH_EXE!"=="" if exist "%NEW%\main.py" set "LAUNCH_EXE=0"
 if "!LAUNCH_EXE!"=="" goto no_files
 
 if "!LAUNCH_EXE!"=="1" (
-    echo  [2/4] Found: ShobdoCalok.exe
+    echo  [2/4] Found: ShobdoCalok.exe ^(packaged build^)
     echo [2/4] Source OK ^(packaged^) >> "%LOG%"
 ) else (
-    echo  [2/4] Found: main.py
+    echo  [2/4] Found: main.py ^(source mode^)
     echo [2/4] Source OK ^(source mode^) >> "%LOG%"
 )
-goto copy_files
-
-:no_files
-echo  [2/4] ERROR: No update files found!
-echo  Extracted folder contents:
-dir "%NEW%" /b 2>nul
-echo [2/4] ERROR: No app found in: %NEW% >> "%LOG%"
-dir "%NEW%" /b >> "%LOG%" 2>nul
 echo.
-echo  Press any key to close...
-pause >nul
-goto cleanup
 
-:copy_files
-echo.
 echo  [3/4] Installing update...
-echo  Copying new files (this may take a moment)...
-echo [3/4] Copying new files... >> "%LOG%"
-robocopy "%NEW%" "%APP%" /E /XD AppData /NFL /NDL /NJH /NJS /NC /NS /NP
+echo  Copying: %NEW%
+echo       To: %APP%
+echo [3/4] Robocopy: %NEW% --^> %APP% >> "%LOG%"
+robocopy "%NEW%" "%APP%" /E /XD AppData /XF "*.log" /R:1 /W:1
 set RC=!errorlevel!
-echo  [3/4] Copy finished (exit code !RC!)
-echo [3/4] Copy finished ^(errorlevel !RC!^) >> "%LOG%"
+echo  [3/4] Robocopy exit code: !RC!
+echo [3/4] Robocopy exit code: !RC! >> "%LOG%"
+
 if !RC! GEQ 8 (
-    echo  [3/4] robocopy had issues, trying xcopy...
-    echo [3/4] WARNING: robocopy had errors, trying xcopy... >> "%LOG%"
-    xcopy "%NEW%\\*" "%APP%\\" /E /Y /Q >> "%LOG%" 2>nul
-    echo  [3/4] xcopy completed.
+    echo  [3/4] robocopy failed, trying xcopy as fallback...
+    echo [3/4] Trying xcopy fallback... >> "%LOG%"
+    xcopy "%NEW%\*" "%APP%\" /E /Y /Q /I
+    set RC2=!errorlevel!
+    echo  [3/4] xcopy exit code: !RC2!
+    echo [3/4] xcopy exit code: !RC2! >> "%LOG%"
 )
 
 echo.
+echo  Verifying copy...
+if exist "%APP%\ShobdoCalok.exe" (
+    echo  [OK] ShobdoCalok.exe found in app directory
+) else (
+    echo  [WARN] ShobdoCalok.exe NOT found in app directory!
+    echo  Listing app directory:
+    dir "%APP%" /b
+)
+echo.
+
 echo  [4/4] Starting ShobdoCalok...
 echo [4/4] Starting app... >> "%LOG%"
 if "!LAUNCH_EXE!"=="1" (
-    start "" "%APP%\\ShobdoCalok.exe"
+    start "" "%APP%\ShobdoCalok.exe"
 ) else (
     start "" /D "%APP%" python main.py
 )
@@ -792,11 +789,29 @@ echo  [4/4] App started!
 echo [4/4] App started. >> "%LOG%"
 
 echo.
-echo  Update complete! Closing in 3 seconds...
-timeout /t 3 /nobreak >nul
+echo  ============================================
+echo   Update complete!
+echo   Closing in 5 seconds...
+echo  ============================================
+timeout /t 5 /nobreak >nul
+goto cleanup
+
+:no_files
+echo  [2/4] ERROR: No update files found in:
+echo  %NEW%
+echo.
+echo  Contents of extracted folder:
+dir "%NEW%" /b 2>nul
+echo.
+echo [2/4] ERROR: No app found in: %NEW% >> "%LOG%"
+dir "%NEW%" /b >> "%LOG%" 2>nul
+echo.
+echo  Press any key to close...
+pause >nul
+goto cleanup
 
 :cleanup
-echo Cleaning up update files... >> "%LOG%"
+echo Cleaning up... >> "%LOG%"
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
 if exist "%UPDATE%" rmdir /s /q "%UPDATE%"
 del "%~f0" 2>nul

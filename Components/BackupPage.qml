@@ -21,7 +21,7 @@ Item {
         h = h % 12; if (h === 0) h = 12
         var m = d.getMinutes()
         var pad = m < 10 ? "0" : ""
-        return "Snippets " + d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear() + " " + h + ":" + pad + m + " " + ampm
+        return "Snippets of " + d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear() + " at " + h + ":" + pad + m + " " + ampm
     }
 
     Flickable {
