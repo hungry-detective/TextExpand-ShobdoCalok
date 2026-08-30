@@ -2,6 +2,13 @@ import sys
 import os
 import platform
 import threading
+
+# Suppress brotlicffi import errors — it's not needed and causes crashes
+# on machines where it's not installed (transitive dep of mitmproxy/py7zr).
+import types
+sys.modules.setdefault("brotli", types.ModuleType("brotli"))
+sys.modules.setdefault("brotlicffi", types.ModuleType("brotlicffi"))
+
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QFontDatabase, QIcon, QAction
 from PySide6.QtQml import QQmlApplicationEngine

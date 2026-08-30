@@ -33,7 +33,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['PyQt5', 'PyQt6', 'PyQt5-sip', 'PyQt6-sip'],
+    excludes=['PyQt5', 'PyQt6', 'PyQt5-sip', 'PyQt6-sip', 'brotli', 'brotlicffi', 'zstandard'],
     noarchive=False,
     optimize=0,
 )

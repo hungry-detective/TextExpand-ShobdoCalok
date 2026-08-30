@@ -42,7 +42,12 @@ except Exception:  # pragma: no cover - fallback for odd import setups
 
 RELEASES_API = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
-_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "ShobdoCalok-Updater", "Accept-Encoding": "gzip, deflate"}
+_HEADERS = {
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "ShobdoCalok-Updater",
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+}
 
 MAX_RETRIES = 3
 RETRY_BACKOFF = [1, 3, 8]  # seconds between retries
@@ -332,7 +337,7 @@ class UpdaterViewModel(QObject):
 
                     mode = "ab" if existing_size > 0 and r.status_code == 206 else "wb"
                     with open(dest, mode) as f:
-                        for chunk in r.iter_content(chunk_size=4 << 20):  # 4MB chunks
+                        for chunk in r.iter_content(chunk_size=8 << 20):  # 8MB chunks
                             if not chunk:
                                 continue
                             f.write(chunk)
@@ -536,93 +541,85 @@ class UpdaterViewModel(QObject):
         return min(candidates, key=lambda p: p.count(os.sep))
 
     def _launch_applier(self, new_root: str, extract_to: str, zip_path: str):
-        """Write a batch script that swaps program files after this app exits."""
+        """Write a batch script + VBScript wrapper that swaps files silently after exit."""
         app_root = self._app_root
         bat = os.path.join(self._update_dir, "apply_update.bat")
+        vbs = os.path.join(self._update_dir, "apply_update.vbs")
         log_file = os.path.join(self._update_dir, "update_log.txt")
 
-        script = f"""@echo off
+        batch_script = f"""@echo off
 setlocal enabledelayedexpansion
 set "APP={app_root}"
 set "NEW={new_root}"
 set "TMPEXTRACT={extract_to}"
 set "LOG={log_file}"
 
-echo ===== ShobdoCalok Updater =====
-echo Timestamp: %DATE% %TIME%
-echo APP=%APP%
-echo NEW=%NEW%
-echo. >> "%LOG%"
 echo ===== ShobdoCalok Updater ===== >> "%LOG%"
 echo Timestamp: %DATE% %TIME% >> "%LOG%"
 echo APP=%APP% >> "%LOG%"
 echo NEW=%NEW% >> "%LOG%"
 echo. >> "%LOG%"
 
-echo [1/4] Killing app process...
-taskkill /F /IM ShobdoCalok.exe 2>nul
-taskkill /F /IM python.exe 2>nul
-echo [1/4] Waiting for process to exit...
-timeout /t 3 /nobreak >nul
-echo [1/4] Process killed.
+echo [1/4] Killing app process... >> "%LOG%"
+taskkill /F /IM ShobdoCalok.exe 2>nul >> "%LOG%"
+timeout /t 2 /nobreak >nul
+echo [1/4] Process killed. >> "%LOG%"
 
-echo [2/4] Checking source...
+echo [2/4] Checking source... >> "%LOG%"
 if exist "%NEW%\\ShobdoCalok.exe" (
-    echo [2/4] Source OK ^(packaged^)
+    echo [2/4] Source OK ^(packaged^) >> "%LOG%"
     set "LAUNCH_EXE=1"
 ) else if exist "%NEW%\\main.py" (
-    echo [2/4] Source OK ^(source mode^)
+    echo [2/4] Source OK ^(source mode^) >> "%LOG%"
     set "LAUNCH_EXE=0"
 ) else (
-    echo [2/4] ERROR: No app found in: %NEW%
-    echo [2/4] Checking contents...
-    dir "%NEW%" /b
-    pause
+    echo [2/4] ERROR: No app found in: %NEW% >> "%LOG%"
     goto cleanup
 )
 
-echo [3/4] Copying new files...
-robocopy "%NEW%" "%APP%" /E /XD AppData /NFL /NDL /NJH /NJS /NC /NS /NP
+echo [3/4] Copying new files... >> "%LOG%"
+robocopy "%NEW%" "%APP%" /E /XD AppData /NFL /NDL /NJH /NJS /NC /NS /NP >> "%LOG%"
 set RC=!errorlevel!
-echo [3/4] Copy finished ^(errorlevel !RC!^)
+echo [3/4] Copy finished ^(errorlevel !RC!^) >> "%LOG%"
 
-:launch
-echo [4/4] Starting app...
+echo [4/4] Starting app... >> "%LOG%"
 if "!LAUNCH_EXE!"=="1" (
     start "" "%APP%\\ShobdoCalok.exe"
 ) else (
     start "" /D "%APP%" python main.py
 )
-echo [4/4] App started.
+echo [4/4] App started. >> "%LOG%"
 
 :cleanup
-echo Cleaning up...
+echo Cleaning up... >> "%LOG%"
 if exist "%TMPEXTRACT%" rmdir /s /q "%TMPEXTRACT%"
-echo Done! Closing in 3 seconds...
-timeout /t 3 /nobreak >nul
 del "%~f0" 2>nul
+del "{vbs}" 2>nul
 """
         with open(bat, "w", encoding="ascii", errors="ignore") as f:
-            f.write(script.replace("\n", "\r\n"))
+            f.write(batch_script.replace("\n", "\r\n"))
 
-        # Use ShellExecuteW for truly detached process launch on Windows.
-        # subprocess.Popen with close_fds + os._exit can kill the child
-        # before it even reads the batch file. ShellExecuteW starts a
-        # completely independent process.
+        # VBScript wrapper — runs the batch silently (window style 0 = hidden)
+        vbs_script = (
+            'Set objShell = CreateObject("WScript.Shell")\n'
+            f'objShell.Run "cmd /c ""{bat}""", 0, False\n'
+        )
+        with open(vbs, "w", encoding="ascii", errors="ignore") as f:
+            f.write(vbs_script)
+
+        # Launch VBScript (hidden, detached)
         try:
             import ctypes
-            import ctypes.wintypes
             SW_SHOWNORMAL = 1
             result = ctypes.windll.shell32.ShellExecuteW(
-                None, "open", bat, None, self._update_dir, SW_SHOWNORMAL
+                None, "open", vbs, None, self._update_dir, SW_SHOWNORMAL
             )
             if result <= 32:
                 raise RuntimeError(f"ShellExecuteW returned {result}")
         except Exception:
-            # Fallback: try subprocess with start /b
             try:
                 subprocess.Popen(
-                    f'start "" "{bat}"',
+                    f'start "" "{vbs}"',
                     shell=True,
                     cwd=self._update_dir,
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
