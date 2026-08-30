@@ -108,8 +108,9 @@ class CopyWorker(QThread):
                         os.path.normpath(dst_file) == os.path.normpath(sys.executable)
                     )
                     if is_updater_self:
-                        dst_file = dst_file + ".new"
-                        _log(f"Deferring self-update of updater: copying to {dst_file}")
+                        new_dst = dst_file + ".new"
+                        _log(f"Deferring self-update of updater: copying to {new_dst}")
+                        dst_file = new_dst
 
                     # Try copying with retries for locked files
                     success = False
@@ -130,6 +131,10 @@ class CopyWorker(QThread):
                     if not success:
                         errors.append(f"{fname}: locked after 3 retries - {last_error}")
                         deferred_files.append((src_file, dst_file))
+                    elif is_updater_self:
+                        # The .new file was written successfully — track it for rename on next launch
+                        deferred_files.append((dst_file, sys.executable))
+                        _log(f"Updater.exe.new written, will rename on next launch")
 
                     copied += 1
                     pct = 10 + int((copied / total_files) * 80)

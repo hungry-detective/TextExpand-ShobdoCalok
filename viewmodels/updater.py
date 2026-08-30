@@ -420,7 +420,8 @@ class UpdaterViewModel(QObject):
                             with done_lock:
                                 current_done = done_bytes
                             dt = now - last_report_time
-                            if dt > 0.3:
+                            if dt > 0:
+                                # Always calculate speed, even if dt is small
                                 speed = (current_done - last_report_bytes) / dt / (1 << 20)
                                 last_report_time = now
                                 last_report_bytes = current_done
@@ -432,6 +433,10 @@ class UpdaterViewModel(QObject):
                                 f"({speed:.1f} MB/s)"
                             )
                             time.sleep(0.5)
+                        # Final report
+                        with done_lock:
+                            current_done = done_bytes
+                        self._set_progress(min(current_done / total_size, 0.99))
                     reporter = threading.Thread(target=report_progress, daemon=True)
                     reporter.start()
                     results = [f.result() for f in futures]
