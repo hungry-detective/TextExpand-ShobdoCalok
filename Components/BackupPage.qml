@@ -225,11 +225,11 @@ Item {
         id: backupConfirmDialog
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: 400; height: contentHeight + 40
+        width: 400; height: 340
         modal: true; dim: true; closePolicy: Popup.CloseOnEscape
         background: Rectangle { radius: 16; color: AppTheme.surface; border.color: AppTheme.hoverBg; border.width: 1 }
         contentItem: ColumnLayout {
-            spacing: 16; anchors.margins: 20
+            spacing: 12; anchors.margins: 20
 
             Text {
                 text: "Backup Options"

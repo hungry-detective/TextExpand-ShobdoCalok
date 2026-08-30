@@ -688,7 +688,7 @@ class UpdaterViewModel(QObject):
     def _find_new_app_root(self, extract_to: str):
         candidates = []
         for root, _dirs, files in os.walk(extract_to):
-            if "ShobdoCalok.exe" in files:
+            if "ShobdoCalok.exe" in files or "main.py" in files:
                 candidates.append(root)
         if not candidates:
             return None
@@ -734,17 +734,24 @@ echo [1/4] Process killed. >> "%LOG%"
 echo.
 echo  [2/4] Checking update files...
 echo [2/4] Checking source... >> "%LOG%"
+set "LAUNCH_EXE="
 if exist "%NEW%\\ShobdoCalok.exe" (
-    echo  [2/4] Update files found (packaged)
+    echo  [2/4] Found ShobdoCalok.exe ^(packaged^)
     echo [2/4] Source OK ^(packaged^) >> "%LOG%"
     set "LAUNCH_EXE=1"
-) else if exist "%NEW%\\main.py" (
-    echo  [2/4] Update files found (source mode)
+)
+if "!LAUNCH_EXE!"=="" if exist "%NEW%\\main.py" (
+    echo  [2/4] Found main.py ^(source^)
     echo [2/4] Source OK ^(source mode^) >> "%LOG%"
     set "LAUNCH_EXE=0"
-) else (
-    echo  [2/4] ERROR: No update files found!
+)
+if "!LAUNCH_EXE!"=="" (
+    echo  [2/4] ERROR: No update files found in:
+    echo  %NEW%
+    echo  Contents of extracted folder:
+    dir "%NEW%" /b 2>nul
     echo [2/4] ERROR: No app found in: %NEW% >> "%LOG%"
+    dir "%NEW%" /b >> "%LOG%" 2>nul
     echo.
     echo  Press any key to close...
     pause >nul
@@ -760,10 +767,10 @@ set RC=!errorlevel!
 echo  [3/4] Copy finished (exit code !RC!)
 echo [3/4] Copy finished ^(errorlevel !RC!^) >> "%LOG%"
 if !RC! GEQ 8 (
-    echo  [3/4] WARNING: robocopy had issues, trying alternate method...
+    echo  [3/4] robocopy had issues, trying xcopy...
     echo [3/4] WARNING: robocopy had errors, trying xcopy... >> "%LOG%"
     xcopy "%NEW%\\*" "%APP%\\" /E /Y /Q >> "%LOG%" 2>nul
-    echo  [3/4] Alternate copy completed.
+    echo  [3/4] xcopy completed.
 )
 
 :start_app
@@ -772,11 +779,14 @@ echo  [4/4] Starting ShobdoCalok...
 echo [4/4] Starting app... >> "%LOG%"
 if "!LAUNCH_EXE!"=="1" (
     start "" "%APP%\\ShobdoCalok.exe"
-) else if "!LAUNCH_EXE!"=="0" (
-    start "" /D "%APP%" python main.py
-) else (
-    start "" "%APP%\\ShobdoCalok.exe"
+    goto app_started
 )
+if "!LAUNCH_EXE!"=="0" (
+    start "" /D "%APP%" python main.py
+    goto app_started
+)
+start "" "%APP%\\ShobdoCalok.exe"
+:app_started
 echo  [4/4] App started!
 echo [4/4] App started. >> "%LOG%"
 
