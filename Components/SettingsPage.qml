@@ -181,8 +181,6 @@ Item {
                     // Download / apply progress bar
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.leftMargin: 48
-                        Layout.rightMargin: 0
                         height: 20
                         visible: updaterViewModel.downloading || updaterViewModel.applying
                         radius: 10

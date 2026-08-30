@@ -3,21 +3,25 @@ import os
 import platform
 import threading
 
-# Block brotlicffi/brotli imports BEFORE anything else loads.
+# Block optional compression modules BEFORE anything else loads.
 # PyInstaller bundles these if they're installed in the build environment
 # (e.g. via mitmproxy/py7zr), but they crash at runtime on clean machines.
-# We install a meta_path finder that makes these imports fail immediately,
-# so urllib3 falls back to gzip/deflate without ever touching brotli.
-class _BrotliBlocker:
-    """Import hook that blocks brotli/brotlicffi/_brotlicffi imports."""
+_BLOCKED_MODULES = frozenset((
+    "brotli", "brotlicffi", "_brotlicffi",
+    "backports", "backports.zstd",
+    "zstandard", "zstd",
+))
+
+class _OptionalModuleBlocker:
+    """Import hook that blocks optional compression module imports."""
     def find_module(self, fullname, path=None):
-        if fullname in ("brotli", "brotlicffi", "_brotlicffi"):
+        if fullname in _BLOCKED_MODULES or fullname.startswith("backports.zstd"):
             return self
         return None
     def load_module(self, fullname):
         raise ImportError(f"Blocked: {fullname} (not needed)")
     def find_spec(self, fullname, path, target=None):
-        if fullname in ("brotli", "brotlicffi", "_brotlicffi"):
+        if fullname in _BLOCKED_MODULES or fullname.startswith("backports.zstd"):
             import importlib.util
             return importlib.util.spec_from_loader(fullname, self)
         return None
@@ -26,7 +30,7 @@ class _BrotliBlocker:
     def exec_module(self, module):
         raise ImportError(f"Blocked: {module.__name__}")
 
-sys.meta_path.insert(0, _BrotliBlocker())
+sys.meta_path.insert(0, _OptionalModuleBlocker())
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QFontDatabase, QIcon, QAction
