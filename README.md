@@ -8,6 +8,10 @@ Shobdo Calok runs silently in your system tray and supports date/time tokens, cl
 ![Python](https://img.shields.io/badge/python-3.12+-informational)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
+![Shobdo Calok — Snippet Editor](docs/screenshot.png)
+
+![Shobdo Calok demo](docs/demo.gif)
+
 ---
 
 ## Features
