@@ -12,7 +12,7 @@ Shobdo Calok runs silently in your system tray and supports date/time tokens, cl
 
 [![Watch Shobdo Calok Tutorial](docs/screenshot.png)](https://github.com/hungry-detective/TextExpand-ShobdoCalok/blob/master/docs/shobdocalok.mp4)
 
-![](https://github.com/user-attachments/assets/b8f80c73-5b83-45fd-bcb0-55f1486c743f)
+<video src="https://github.com/user-attachments/assets/b8f80c73-5b83-45fd-bcb0-55f1486c743f" controls width="800"></video>
 
 ![Shobdo Calok Demo](docs/demo.gif)
 
