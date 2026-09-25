@@ -10,10 +10,9 @@ Shobdo Calok runs silently in your system tray and supports date/time tokens, cl
 
 ![Shobdo Calok — Snippet Editor](docs/screenshot.png)
 
-<video controls width="800">
-  <source src="docs/Shobdo%20Calok.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+[![Watch Shobdo Calok Tutorial](docs/screenshot.png)](https://github.com/hungry-detective/TextExpand-ShobdoCalok/blob/master/docs/shobdocalok.mp4)
+
+<video src="https://raw.githubusercontent.com/hungry-detective/TextExpand-ShobdoCalok/master/docs/shobdocalok.mp4" controls width="800"></video>
 
 ---
 
