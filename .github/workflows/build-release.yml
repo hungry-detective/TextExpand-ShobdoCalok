@@ -16,86 +16,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
-
-      - name: Write Google OAuth credentials
+      - name: Write Google OAuth credentials (embedded into the exe)
         env:
           GOOGLE_CLIENT_SECRET_JSON: ${{ secrets.GOOGLE_CLIENT_SECRET_JSON }}
-        shell: python
-        run: |
-          import os, json
-          data = os.environ.get('GOOGLE_CLIENT_SECRET_JSON', '')
-          if data:
-              json.loads(data)  # validate
-              with open('client_secret.json', 'w', encoding='utf-8') as f:
-                  f.write(data)
-              print(f"client_secret.json written ({len(data)} bytes)")
-          else:
-              print("WARNING: GOOGLE_CLIENT_SECRET_JSON secret not set, skipping")
-
-      - name: Build standalone updater
-        run: pyinstaller --noconfirm --clean updater.spec
-
-      - name: Stage updater for main build
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path "dist/ShobdoCalok" -Force
-          Copy-Item "dist/Updater.exe" "dist/ShobdoCalok/Updater.exe" -Force
+          if ([string]::IsNullOrWhiteSpace($env:GOOGLE_CLIENT_SECRET_JSON)) { throw "GOOGLE_CLIENT_SECRET_JSON secret is not set - Google login would not work" }
+          $null = $env:GOOGLE_CLIENT_SECRET_JSON | ConvertFrom-Json
+          Set-Content -Path client_secret.json -Value $env:GOOGLE_CLIENT_SECRET_JSON -Encoding utf8NoBOM -NoNewline
+          Write-Host "client_secret.json written"
 
-      - name: Build portable app
-        run: pyinstaller --noconfirm --clean ShobdoCalok.spec
+      - name: Build
+        run: cargo build --release --locked
 
-      - name: Sanity check build
-        working-directory: dist/ShobdoCalok
+      - name: Package
+        shell: pwsh
         run: |
-          if (-not (Test-Path "ShobdoCalok.exe")) { throw "ShobdoCalok.exe missing" }
-          if (-not (Test-Path "_internal")) { throw "_internal missing" }
-          if (-not (Test-Path "_internal/client_secret.json")) { throw "client_secret.json missing — login won't work" }
-          Write-Host "All checks passed (including client_secret.json)"
-
-      - name: Zip portable build
-        working-directory: dist
-        run: Compress-Archive -Path "ShobdoCalok" -DestinationPath "ShobdoCalok-portable.zip" -Force
-
-      - name: Determine version from tag
-        id: version
-        run: echo "version=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_OUTPUT
-
-      - name: Rename zip with version
-        working-directory: dist
-        run: |
-          $v = "${{ steps.version.outputs.version }}"
-          Rename-Item "ShobdoCalok-portable.zip" "ShobdoCalok-v${v}-portable.zip"
-
-      - name: Generate SHA256 checksum
-        working-directory: dist
-        shell: python
-        run: |
-          import glob, hashlib
-          zip_files = glob.glob("ShobdoCalok-v*-portable.zip")
-          if not zip_files:
-              raise Exception("No zip file found")
-          zip_path = zip_files[0]
-          h = hashlib.sha256()
-          with open(zip_path, "rb") as f:
-              for chunk in iter(lambda: f.read(1 << 20), b""):
-                  h.update(chunk)
-          checksum = h.hexdigest()
-          sha_path = zip_path.replace(".zip", ".sha256")
-          with open(sha_path, "w") as f:
-              f.write(f"{checksum}  {zip_path}\n")
-          print(f"SHA256: {checksum}  {zip_path}")
+          $v = "$env:GITHUB_REF_NAME" -replace '^v',''
+          New-Item -ItemType Directory -Force dist/ShobdoCalok | Out-Null
+          Copy-Item target/release/ShobdoCalok.exe dist/ShobdoCalok/
+          Copy-Item LICENSE, README.md dist/ShobdoCalok/
+          Copy-Item target/release/ShobdoCalok.exe dist/ShobdoCalok.exe
+          Compress-Archive -Path dist/ShobdoCalok -DestinationPath "dist/ShobdoCalok-v$v-portable.zip" -Force
+          $zip = "ShobdoCalok-v$v-portable.zip"
+          $h = (Get-FileHash "dist/$zip" -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "dist/ShobdoCalok-v$v-portable.sha256" -Value "$h  $zip" -NoNewline
+          Get-ChildItem dist
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/ShobdoCalok-v*-portable.*
+          files: |
+            dist/ShobdoCalok-v*-portable.zip
+            dist/ShobdoCalok-v*-portable.sha256
+            dist/ShobdoCalok.exe
           generate_release_notes: true

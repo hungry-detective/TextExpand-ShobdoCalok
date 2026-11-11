@@ -1,82 +1,71 @@
+<div align="center">
+
+<img src="docs/images/app-icon.svg" width="96" alt="Shobdo Calok">
+
 # Shobdo Calok
 
-**A fast, keyboard-friendly text expander for Windows.** Define short abbreviations that automatically expand into full phrases, code blocks, or dynamic templates.
+**A fast, keyboard-friendly text expander for Windows.**
+Type a short abbreviation anywhere — it turns into a full phrase, code block or smart template.
 
-Shobdo Calok runs silently in your system tray and supports date/time tokens, clipboard insertion, fill-in fields, folder-based snippet organisation, Google Drive backup, and automatic updates from GitHub Releases.
+[![Download ShobdoCalok.exe](https://img.shields.io/badge/Download-ShobdoCalok.exe-7c3aed?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/hungry-detective/TextExpand-ShobdoCalok/releases/latest/download/ShobdoCalok.exe)
+[![All releases](https://img.shields.io/github/v/release/hungry-detective/TextExpand-ShobdoCalok?style=for-the-badge&label=Latest%20version&color=8b5cf6)](https://github.com/hungry-detective/TextExpand-ShobdoCalok/releases/latest)
+[![Documentation](https://img.shields.io/badge/Read-the%20docs-2d1b4e?style=for-the-badge)](https://hungry-detective.github.io/TextExpand-ShobdoCalok/)
 
-![Platform](https://img.shields.io/badge/platform-Windows-blue)
-![Python](https://img.shields.io/badge/python-3.12+-informational)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-blue)
+![Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20egui-orange)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-![Shobdo Calok — Snippet Editor](docs/screenshot.png)
+<img src="docs/images/editor-dark.png" width="820" alt="Shobdo Calok — Snippet Editor">
 
-<video src="https://github.com/user-attachments/assets/b8f80c73-5b83-45fd-bcb0-55f1486c743f" controls width="800"></video>
-
----
+</div>
 
 ## Features
 
-- ⚡ Real-time abbreviation expansion while you type
-- 📁 Folder-based snippet organisation
-- 🧩 Dynamic templates: `{date}`, `{time}`, `{field:Label}`, `{cursor}`
-- 📋 Clipboard + direct-insert modes
-- 🌗 Light / dark / system theme
-- ☁️ Google Drive backup & restore
-- 🚀 Automatic "check for updates" via GitHub Releases
-- 🔄 Fully portable (no installer — your data lives in `AppData\`)
+- ⚡ **Expands in every app** — browser, Office, chat, email, code editors (word-boundary aware)
+- 🧩 **Smart tokens** — `{date}`, `{time}`, `{datetime}`, `{date:%d/%m/%Y}`, `{clipboard}`, `{cursor}`, `{field:Label}` fill-in forms
+- 📁 **Folders & search** — drag-and-drop reordering, move snippets between folders, right-click menus
+- 🎓 **Animated built-in tutorial**
+- ☁️ **Google Drive backup & restore** — sign in with your own Google account; plus JSON export/import
+- 🌗 **System / Dark / Light** theme
+- 🗂 **System tray** — pause/resume expansion, check for updates; **Run at startup** starts silently in the tray
+- 💤 **Keeps working after sleep / hibernate / lock**
+- 🚀 **One-click updates** from GitHub Releases — your data is never touched
+- 🔄 **Portable** — one exe, data in an `AppData` folder next to it
 
-## How updates work
+| Tutorial | Fill-in form | Light mode |
+|---|---|---|
+| <img src="docs/images/tutorial-expand.png" width="270"> | <img src="docs/images/field-dialog.png" width="230"> | <img src="docs/images/editor-light.png" width="270"> |
 
-The app checks the [Releases](https://github.com/hungry-detective/TextExpand-ShobdoCalok/releases) page for the newest version. When a newer release is found you can download and install it from **Settings → Check for Updates**. The updater:
+📖 **Full guide with screenshots:** [docs/index.html](https://hungry-detective.github.io/TextExpand-ShobdoCalok/)
 
-1. Downloads the portable build (ZIP) for the latest release
-2. Replaces the program files (`ShobdoCalok.exe`, `_internal\`)
-3. **Never touches your data** in `AppData\` (snippets, settings, tokens)
+## Install
 
-## Running from source
+1. Download **[ShobdoCalok.exe](https://github.com/hungry-detective/TextExpand-ShobdoCalok/releases/latest/download/ShobdoCalok.exe)** (or the portable ZIP from [Releases](https://github.com/hungry-detective/TextExpand-ShobdoCalok/releases/latest)).
+2. Put it in its own folder and run it. Your snippets are saved in `AppData\` beside it.
+3. Type `.hello` in any app.
 
-```bash
-# 1. Install Python 3.12+ and create a virtual environment
-python -m venv .venv
-.venv\Scripts\activate
+Upgrading from the old Python version: use **Check for Updates** in the old app, or drop the new exe into the same folder — your existing `AppData` is used as-is.
 
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Launch
-python main.py
-```
-
-Or simply double-click `Run_ShobdoCalok.bat`.
-
-### Google Drive backup
-
-Google Drive backup needs your own OAuth credentials. Copy `client_secret.example.json` to `client_secret.json` and fill in your **client_id** and **client_secret** from the [Google Cloud Console](https://console.cloud.google.com/apis/credentials). This file is git-ignored and never published.
-
-## Building a portable EXE
+## Build from source
 
 ```bash
-pip install pyinstaller
-pyinstaller --noconfirm --clean ShobdoCalok.spec
-# Output: dist\ShobdoCalok\
+cargo build --release
+# Output: target\release\ShobdoCalok.exe
 ```
 
-## Releasing a new version
+Google Drive sign-in needs an OAuth client: copy `client_secret.example.json` to `client_secret.json` in the project root (it is git-ignored and gets embedded into the exe at build time). Release builds get it from the `GOOGLE_CLIENT_SECRET_JSON` repository secret.
 
-1. Bump `APP_VERSION` in `version.py`
-2. Tag & push:
+## Releasing
+
+Bump `version` in `Cargo.toml`, then:
 
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+git tag v2.0.1
+git push origin v2.0.1
 ```
 
-The GitHub Actions workflow automatically builds the portable ZIP and publishes it as a release. Users then get the update through **Settings → Check for Updates**.
-
-## Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+GitHub Actions builds the exe, the portable ZIP and its SHA256, and publishes the release.
 
 ## License
 
-This project is licensed under the [GNU General Public License v3](LICENSE).
+[GNU General Public License v3](LICENSE)

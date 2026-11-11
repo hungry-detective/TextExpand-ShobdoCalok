@@ -1,37 +1,3 @@
-# ── Python ────────────────────────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-venv/
-env/
-
-# ── Secrets & user data (NEVER commit) ────────────────────────────────────
+/target
+/AppData
 client_secret.json
-google_token.json
-snippets.json
-settings.ini
-last_backup.txt
-AppData/
-
-# ── Build output ──────────────────────────────────────────────────────────
-build/
-dist/
-*.spec.bak
-*.toc
-*.pyz
-*.pkg
-
-# ── Logs / dev artifacts ──────────────────────────────────────────────────
-*.log
-*.err
-*_error.txt
-error*.txt
-test_out.txt
-
-# ── Editors / OS ──────────────────────────────────────────────────────────
-.vscode/
-.idea/
-*.swp
-.DS_Store
-Thumbs.db

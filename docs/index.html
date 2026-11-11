@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shobdo Calok Docs</title>
+<meta name="description" content="Shobdo Calok — a fast, keyboard-friendly text expander for Windows. Documentation and guide.">
+<link rel="icon" href="images/app-icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #111318; --surface: #24282e; --panel: #1a1d23; --hover: #2a2d35;
+    --text: #f1f5f9; --muted: #94a3b8; --primary: #7c3aed; --primary-hover: #8b5cf6;
+    --primary-light: #2d1b4e; --green: #34d399; --border: #2a2d35;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #fefefe; --surface: #f8f9fa; --panel: #f1f5f9; --hover: #e2e8f0;
+      --text: #0f172a; --muted: #64748b; --primary-light: #ede9fe; --green: #10b981; --border: #e2e8f0;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #fefefe; --surface: #f8f9fa; --panel: #f1f5f9; --hover: #e2e8f0;
+    --text: #0f172a; --muted: #64748b; --primary-light: #ede9fe; --green: #10b981; --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 "Segoe UI", Inter, system-ui, -apple-system, sans-serif; }
+  a { color: var(--primary-hover); }
+  code, kbd { font-family: "Cascadia Code", Consolas, "Courier New", monospace; font-size: .92em;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+  nav { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  nav .wrap { display: flex; align-items: center; gap: 18px; height: 56px; overflow-x: auto; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; white-space: nowrap; color: var(--text); text-decoration: none; }
+  nav .brand img { width: 28px; height: 28px; }
+  nav .links { display: flex; gap: 16px; margin-left: auto; }
+  nav .links a { color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap; }
+  nav .links a:hover { color: var(--primary-hover); }
+
+  header.hero { padding: 64px 0 40px; text-align: center; }
+  .hero img.logo { width: 88px; height: 88px; }
+  .hero h1 { font-size: clamp(32px, 6vw, 52px); margin: 14px 0 6px; letter-spacing: -.5px; }
+  .hero p.lead { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0 auto 26px; }
+  .badge { display: inline-block; background: var(--primary-light); color: var(--primary-hover);
+    font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 999px; margin-bottom: 8px; }
+  .btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 12px;
+    font-weight: 700; text-decoration: none; font-size: 15px; }
+  .btn.primary { background: var(--primary); color: #fff; }
+  .btn.primary:hover { background: var(--primary-hover); }
+  .btn.ghost { border: 1px solid var(--primary); color: var(--primary-hover); }
+  .btn.ghost:hover { background: var(--primary-light); }
+  .hero .shot { margin-top: 40px; }
+
+  .shot { border-radius: 14px; overflow: hidden; border: 1px solid var(--border);
+    box-shadow: 0 20px 50px rgba(0,0,0,.35); background: var(--panel); }
+  .shot img { display: block; width: 100%; height: auto; }
+  figure { margin: 0; }
+  figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; text-align: center; }
+
+  section { padding: 56px 0; border-top: 1px solid var(--border); }
+  h2 { font-size: 30px; margin: 0 0 8px; }
+  h3 { font-size: 20px; margin: 22px 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--surface); border-radius: 14px; padding: 18px 20px; }
+  .card h4 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .card .ico { font-size: 22px; }
+
+  .split { display: grid; gap: 32px; grid-template-columns: 1fr 1.25fr; align-items: center; }
+  .split.rev { grid-template-columns: 1.25fr 1fr; }
+  .split.rev > :first-child { order: 2; }
+  @media (max-width: 820px) { .split, .split.rev { grid-template-columns: 1fr; } .split.rev > :first-child { order: 0; } }
+  ol.steps { padding-left: 22px; } ol.steps li { margin-bottom: 8px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: 14px; overflow: hidden; font-size: 15px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--panel); color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .6px; }
+  tr:last-child td { border-bottom: 0; }
+  .tablewrap { overflow-x: auto; }
+
+  .gallery { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  details { background: var(--surface); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p { color: var(--muted); margin: 10px 0 0; }
+  footer { padding: 40px 0 60px; text-align: center; color: var(--muted); font-size: 14px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="images/app-icon.svg" alt="">Shobdo Calok</a>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#start">Getting started</a>
+      <a href="#editor">Editor</a>
+      <a href="#tokens">Tokens</a>
+      <a href="#tutorial">Tutorial</a>
+      <a href="#backup">Backup</a>
+      <a href="#settings">Settings</a>
+      <a href="#faq">FAQ</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <img class="logo" src="images/app-icon.svg" alt="Shobdo Calok logo">
+    <h1>Shobdo Calok</h1>
+    <div class="badge">Version 2.0 · Windows 10 &amp; 11</div>
+    <p class="lead">A fast, keyboard-friendly text expander. Type a short abbreviation anywhere — it turns into a full phrase, a code block, or a smart template with dates, clipboard and fill-in fields.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/hungry-detective/TextExpand-ShobdoCalok/releases/latest/download/ShobdoCalok.exe">⬇ Download latest (.exe)</a>
+      <a class="btn ghost" href="https://github.com/hungry-detective/TextExpand-ShobdoCalok/releases/latest">All downloads &amp; release notes</a>
+    </div>
+    <figure class="shot"><img src="images/editor-dark.png" alt="Shobdo Calok snippet editor and library in dark mode"></figure>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <h2>Features</h2>
+    <p class="sub">One small portable program (no installer, no Python, no runtime). It sits quietly in your system tray.</p>
+    <div class="grid">
+      <div class="card"><div class="ico">⚡</div><h4>Expands everywhere</h4><p>Works in any app — browser, Word, chat, email, code editors. Matches only at word boundaries, so it never fires inside normal words.</p></div>
+      <div class="card"><div class="ico">🧩</div><h4>Smart templates</h4><p><code>{date}</code>, <code>{time}</code>, <code>{clipboard}</code>, <code>{cursor}</code> and <code>{field:Label}</code> fill-in forms.</p></div>
+      <div class="card"><div class="ico">📁</div><h4>Folders &amp; search</h4><p>Organise snippets in folders, drag &amp; drop to reorder or move between folders, search instantly.</p></div>
+      <div class="card"><div class="ico">☁️</div><h4>Google Drive backup</h4><p>Sign in with your own Google account to back up and restore your snippets. Keeps a history of 10 backups.</p></div>
+      <div class="card"><div class="ico">🌗</div><h4>Light &amp; dark</h4><p>Follow Windows, or force dark or light mode.</p></div>
+      <div class="card"><div class="ico">🚀</div><h4>Auto updates</h4><p>Checks GitHub Releases and installs new versions in one click — your data is never touched.</p></div>
+      <div class="card"><div class="ico">💤</div><h4>Survives sleep</h4><p>The keyboard hook re-installs itself after sleep, hibernate or unlock. No need to restart the app.</p></div>
+      <div class="card"><div class="ico">🔄</div><h4>Portable</h4><p>Everything lives in an <code>AppData</code> folder next to the exe. Move the folder anywhere — even “Run at startup” follows it.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap split">
+    <div>
+      <h2>Getting started</h2>
+      <ol class="steps">
+        <li>Download <code>ShobdoCalok.exe</code> and put it in its own folder (for example <code>D:\Tools\ShobdoCalok\</code>).</li>
+        <li>Double-click it. The window opens and an icon appears in the system tray.</li>
+        <li>Open any app and type <code>.hello</code> — it becomes <em>“Hello! How are you today?”</em></li>
+        <li>Create your own snippets in the <strong>Editor &amp; Library</strong> page.</li>
+        <li>Closing or minimising the window only hides it — expansion keeps working from the tray.</li>
+      </ol>
+      <p class="sub">If Windows SmartScreen warns about an unknown publisher, choose <em>More info → Run anyway</em>.</p>
+    </div>
+    <figure><div class="shot"><img src="images/tutorial-expand.png" alt="Tutorial showing .omw and .hello expanding in a chat app"></div>
+      <figcaption>Type a trigger word in any app and it expands instantly.</figcaption></figure>
+  </div>
+</section>
+
+<section id="editor">
+  <div class="wrap">
+    <h2>Editor &amp; Library</h2>
+    <p class="sub">The left panel is your library, the right panel edits the selected snippet.</p>
+    <div class="split rev">
+      <div>
+        <h3>Library</h3>
+        <ul>
+          <li><strong>Click a folder</strong> to expand it; click a snippet to edit it.</li>
+          <li>Header buttons: <em>expand / collapse all</em>, <em>new folder</em>, <em>new snippet</em>.</li>
+          <li><strong>Drag</strong> folders or snippets to reorder. Drop a snippet on another folder to move it.</li>
+          <li><strong>Right-click</strong> a folder to rename or delete it; right-click a snippet to duplicate, move or delete it.</li>
+          <li>The search box filters by trigger word and content.</li>
+        </ul>
+        <h3>Editor</h3>
+        <ul>
+          <li>Choose the <strong>folder</strong>, type the <strong>trigger word</strong> (e.g. <code>.sig</code>) and write the expansion text.</li>
+          <li><strong>INSERT</strong> buttons add tokens at the text cursor: CLIP, DATE, TIME, FIELD, CURSOR.</li>
+          <li><strong>Live preview</strong> shows exactly what will be typed.</li>
+          <li>Press <strong>SAVE CHANGES</strong> — the button flashes green when saved.</li>
+        </ul>
+      </div>
+      <figure><div class="shot"><img src="images/editor-light.png" alt="Editor in light mode"></div>
+        <figcaption>Light mode — the Work folder with a date/time template and its live preview.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="tokens">
+  <div class="wrap">
+    <h2>Tokens</h2>
+    <p class="sub">Put these inside a snippet’s text; they are replaced at the moment you type the trigger.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Token</th><th>Becomes</th><th>Example</th></tr>
+      <tr><td><code>{date}</code></td><td>Today’s date</td><td>11 November 2026</td></tr>
+      <tr><td><code>{time}</code></td><td>Current time (12-hour)</td><td>02:30 PM</td></tr>
+      <tr><td><code>{datetime}</code></td><td>Date and 24-hour time</td><td>2026-11-11 14:30</td></tr>
+      <tr><td><code>{date:%d/%m/%Y}</code></td><td>Date in your own format (strftime)</td><td>11/11/2026</td></tr>
+      <tr><td><code>{time:%H:%M}</code>, <code>{datetime:…}</code></td><td>Custom time / date-time formats</td><td>14:30</td></tr>
+      <tr><td><code>{clipboard}</code></td><td>Whatever you last copied</td><td>“You copied: …”</td></tr>
+      <tr><td><code>{cursor}</code></td><td>Where the text cursor is placed after expanding</td><td><code>Hi {cursor}, how are you?</code></td></tr>
+      <tr><td><code>{field:Label}</code></td><td>Asks you for a value in a small form</td><td><code>The price is {field:Price}</code></td></tr>
+    </table></div>
+    <div class="split" style="margin-top:32px">
+      <div>
+        <h3>Fill-in fields</h3>
+        <p>When a snippet contains <code>{field:…}</code> tokens, a <strong>“Complete your form”</strong> window appears over the app you are typing in. Each field is labelled with the text that comes right before it. Press <kbd>Enter</kbd> or <strong>Insert Snippet</strong> to paste; <kbd>Esc</kbd> cancels and inserts the text without the fields.</p>
+      </div>
+      <figure><div class="shot" style="max-width:420px;margin:auto"><img src="images/field-dialog.png" alt="Complete your form dialog"></div>
+        <figcaption>The fill-in form for <code>Hi {field:Name}, … {field:Price}</code>.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="tutorial">
+  <div class="wrap">
+    <h2>Built-in tutorial</h2>
+    <p class="sub">The graduation-cap page plays animated, self-running lessons — a mouse pointer clicks and types for you.</p>
+    <div class="gallery">
+      <figure><div class="shot"><img src="images/tutorial-create.png" alt="Tutorial step 1: create a snippet"></div><figcaption>1 · Create a snippet and try it.</figcaption></figure>
+      <figure><div class="shot"><img src="images/tutorial-dynamic.png" alt="Tutorial step 3: date and time"></div><figcaption>3 · Dynamic snippets — date &amp; time.</figcaption></figure>
+      <figure><div class="shot"><img src="images/tutorial-fillin.png" alt="Tutorial: fill-in fields"></div><figcaption>Fill-in fields.</figcaption></figure>
+      <figure><div class="shot"><img src="images/tutorial-cursor.png" alt="Tutorial: cursor placement"></div><figcaption>Cursor placement.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="backup">
+  <div class="wrap split">
+    <div>
+      <h2>Backup &amp; restore</h2>
+      <h3>Local file</h3>
+      <p><strong>Export Library</strong> saves all snippets to a JSON file; <strong>Import Library</strong> replaces your library with one.</p>
+      <h3>Google Drive</h3>
+      <ol class="steps">
+        <li>Click <strong>SIGN IN</strong> — your browser opens Google’s sign-in page. Use <em>your own</em> Google account.</li>
+        <li><strong>Backup to Drive</strong> → give the backup a name → <em>Create Backup</em>.</li>
+        <li><strong>Restore from Drive</strong> lists your backups; click <em>RESTORE</em> on the one you want.</li>
+      </ol>
+      <p class="sub">Backups are stored in a private, app-only area of your Drive (they don’t clutter your files). The app keeps the 10 newest.</p>
+    </div>
+    <figure><div class="shot"><img src="images/backup.png" alt="Backup page"></div><figcaption>Backup page.</figcaption></figure>
+  </div>
+</section>
+
+<section id="settings">
+  <div class="wrap">
+    <h2>Settings, tray &amp; updates</h2>
+    <div class="split rev">
+      <div>
+        <ul>
+          <li><strong>Run at Startup</strong> — starts with Windows <em>silently in the tray</em>. When you open the app yourself, the window shows. If you move the app folder, the startup entry updates itself next time you run it.</li>
+          <li><strong>Theme</strong> — System, Dark or Light (also the sun/moon button in the title bar).</li>
+          <li><strong>Check for Updates</strong> — downloads and installs new releases from GitHub. Your snippets and settings are kept.</li>
+          <li><strong>Tray menu</strong> (right-click the tray icon): Show Application · Pause / Resume Expansion · Check for Updates · Quit. Double-click the icon to open the window.</li>
+        </ul>
+      </div>
+      <figure><div class="shot"><img src="images/settings.png" alt="Settings page"></div><figcaption>Settings.</figcaption></figure>
+    </div>
+    <div class="gallery" style="margin-top:28px">
+      <figure><div class="shot"><img src="images/about.png" alt="About page"></div><figcaption>About &amp; updates.</figcaption></figure>
+      <figure><div class="shot"><img src="images/settings-light.png" alt="Settings in light mode"></div><figcaption>Light mode.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2>FAQ</h2>
+    <details><summary>Where is my data stored?</summary><p>In the <code>AppData</code> folder next to <code>ShobdoCalok.exe</code>: <code>snippets.json</code>, <code>settings.ini</code> and (if you signed in) <code>google_token.json</code>. Copy the whole folder to move or back up everything.</p></details>
+    <details><summary>Does it keep working after sleep?</summary><p>Yes. The app listens for resume and unlock events and also detects a sleep gap itself, then re-installs its keyboard hook automatically.</p></details>
+    <details><summary>A snippet didn’t expand.</summary><p>Type the trigger after a space or at the start of a line (it won’t fire in the middle of a word), check the tray menu isn’t set to <em>Paused</em>, and make sure the app isn’t blocked by a program running as Administrator — Windows doesn’t let normal apps type into elevated windows.</p></details>
+    <details><summary>Is it safe? It reads my keyboard.</summary><p>Keystrokes are only compared with your own trigger words in memory — nothing is logged or sent anywhere. The source code is open on GitHub.</p></details>
+    <details><summary>Can I upgrade from the old Python version?</summary><p>Yes — use <em>Check for Updates</em> in the old app, or download the new exe into the same folder. The existing <code>AppData</code> folder is used as-is.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">Shobdo Calok · GPL-3.0 · <a href="https://github.com/hungry-detective/TextExpand-ShobdoCalok">Source on GitHub</a></div>
+</footer>
+</body>
+</html>
