@@ -2,6 +2,7 @@
 #![allow(deprecated)]
 //! Shobdo Calok — a fast, keyboard-friendly text expander for Windows.
 //! Pure Rust / egui port of the original PySide6 + QML application.
+//! Source: https://github.com/hungry-detective/TextExpand-ShobdoCalok
 
 mod anim;
 mod app;
