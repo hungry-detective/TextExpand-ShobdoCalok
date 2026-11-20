@@ -22,6 +22,12 @@ pub fn wide(s: &str) -> Vec<u16> {
 static MAIN_HWND: AtomicIsize = AtomicIsize::new(0);
 static OLD_PROC: AtomicIsize = AtomicIsize::new(0);
 static MAIN_VISIBLE: AtomicBool = AtomicBool::new(true);
+/// Windows 10 frame mode: no WS_CAPTION / WS_THICKFRAME at all (see install_frameless).
+static LEGACY_FRAME: AtomicBool = AtomicBool::new(false);
+
+/// Styles that must never be on the main window in Windows 10 mode.
+/// WS_CAPTION includes WS_BORDER.
+const LEGACY_STRIP: u32 = WS_CAPTION | WS_THICKFRAME;
 
 pub fn main_hwnd() -> HWND {
     MAIN_HWND.load(Ordering::SeqCst) as HWND
@@ -272,10 +278,64 @@ unsafe extern "system" fn frameless_proc(hwnd: HWND, msg: u32, wparam: WPARAM, l
             }
             return HTCLIENT as LRESULT;
         }
+        WM_STYLECHANGING if LEGACY_FRAME.load(Ordering::Relaxed) && wparam as i32 == GWL_STYLE => {
+            // winit re-applies WS_CAPTION | WS_SIZEBOX on every state change
+            // (show, hide, maximize, restore). Filter them out before they land.
+            let ss = &mut *(lparam as *mut STYLESTRUCT);
+            ss.styleNew &= !LEGACY_STRIP;
+        }
+        // Windows 10 mode: without WS_THICKFRAME the system SC_SIZE loop
+        // refuses to resize, so edge drags (the WM_NCHITTEST border codes
+        // above, or egui's BeginResize, which posts the same message) are
+        // driven here instead.
+        WM_SETCURSOR if LEGACY_FRAME.load(Ordering::Relaxed) => {
+            let idc = match (lparam & 0xFFFF) as u32 {
+                HTLEFT | HTRIGHT => Some(IDC_SIZEWE),
+                HTTOP | HTBOTTOM => Some(IDC_SIZENS),
+                HTTOPLEFT | HTBOTTOMRIGHT => Some(IDC_SIZENWSE),
+                HTTOPRIGHT | HTBOTTOMLEFT => Some(IDC_SIZENESW),
+                _ => None,
+            };
+            if let Some(idc) = idc {
+                SetCursor(LoadCursorW(std::ptr::null_mut(), idc));
+                return 1;
+            }
+        }
+        WM_NCLBUTTONDOWN
+            if LEGACY_FRAME.load(Ordering::Relaxed)
+                && (HTLEFT..=HTBOTTOMRIGHT).contains(&(wparam as u32))
+                && IsZoomed(hwnd) == 0 =>
+        {
+            let mut pt: POINT = std::mem::zeroed();
+            let mut r: RECT = std::mem::zeroed();
+            GetCursorPos(&mut pt);
+            GetWindowRect(hwnd, &mut r);
+            LEGACY_RESIZE.with(|s| s.set(Some((wparam as u32, pt, r))));
+            SetCapture(hwnd);
+            return 0;
+        }
+        WM_MOUSEMOVE if LEGACY_RESIZE.with(|s| s.get()).is_some() => {
+            if let Some((hit, start, r0)) = LEGACY_RESIZE.with(|s| s.get()) {
+                legacy_resize_step(hwnd, hit, start, r0);
+            }
+            return 0;
+        }
+        WM_LBUTTONUP if LEGACY_RESIZE.with(|s| s.get()).is_some() => {
+            LEGACY_RESIZE.with(|s| s.set(None));
+            ReleaseCapture();
+            return 0;
+        }
+        WM_CAPTURECHANGED => {
+            LEGACY_RESIZE.with(|s| s.set(None));
+        }
         WM_GETMINMAXINFO => {
             let old = OLD_PROC.load(Ordering::SeqCst);
             let res = call_old(old, hwnd, msg, wparam, lparam);
-            if IsZoomed(hwnd) != 0 {
+            let zoomed = IsZoomed(hwnd) != 0;
+            // A captionless (Windows 10 mode) window maximizes over the
+            // taskbar unless the work-area limits are already in place
+            // *before* it is zoomed, so apply them there unconditionally.
+            if zoomed || LEGACY_FRAME.load(Ordering::Relaxed) {
                 let mut wr: RECT = std::mem::zeroed();
                 GetWindowRect(hwnd, &mut wr);
                 let mon = MonitorFromRect(&wr, MONITOR_DEFAULTTONEAREST);
@@ -287,8 +347,10 @@ unsafe extern "system" fn frameless_proc(hwnd: HWND, msg: u32, wparam: WPARAM, l
                     let mr = mi.rcMonitor;
                     info.ptMaxSize.x = wa.right - wa.left;
                     info.ptMaxSize.y = wa.bottom - wa.top;
-                    info.ptMaxTrackSize.x = info.ptMaxSize.x;
-                    info.ptMaxTrackSize.y = info.ptMaxSize.y;
+                    if zoomed {
+                        info.ptMaxTrackSize.x = info.ptMaxSize.x;
+                        info.ptMaxTrackSize.y = info.ptMaxSize.y;
+                    }
                     info.ptMaxPosition.x = (wa.left - mr.left).abs();
                     info.ptMaxPosition.y = (wa.top - mr.top).abs();
                 }
@@ -309,6 +371,34 @@ unsafe extern "system" fn frameless_proc(hwnd: HWND, msg: u32, wparam: WPARAM, l
     call_old(old, hwnd, msg, wparam, lparam)
 }
 
+thread_local! {
+    /// Windows 10 mode edge resize in progress: (hit code, start cursor, start rect).
+    static LEGACY_RESIZE: std::cell::Cell<Option<(u32, POINT, RECT)>> = const { std::cell::Cell::new(None) };
+}
+
+unsafe fn legacy_resize_step(hwnd: HWND, hit: u32, start: POINT, r0: RECT) {
+    let mut pt: POINT = std::mem::zeroed();
+    GetCursorPos(&mut pt);
+    let (dx, dy) = (pt.x - start.x, pt.y - start.y);
+    let left = matches!(hit, HTLEFT | HTTOPLEFT | HTBOTTOMLEFT);
+    let right = matches!(hit, HTRIGHT | HTTOPRIGHT | HTBOTTOMRIGHT);
+    let top = matches!(hit, HTTOP | HTTOPLEFT | HTTOPRIGHT);
+    let bottom = matches!(hit, HTBOTTOM | HTBOTTOMLEFT | HTBOTTOMRIGHT);
+
+    // Min/max track size as winit (min_inner_size) and we report them.
+    let mut mmi: MINMAXINFO = std::mem::zeroed();
+    mmi.ptMaxTrackSize = POINT { x: i32::MAX, y: i32::MAX };
+    SendMessageW(hwnd, WM_GETMINMAXINFO, 0, &mut mmi as *mut _ as LPARAM);
+    let clamp = |v: i32, lo: i32, hi: i32| v.max(lo).min(hi.max(lo));
+    let w0 = r0.right - r0.left;
+    let h0 = r0.bottom - r0.top;
+    let w = clamp(w0 + if left { -dx } else if right { dx } else { 0 }, mmi.ptMinTrackSize.x, mmi.ptMaxTrackSize.x);
+    let h = clamp(h0 + if top { -dy } else if bottom { dy } else { 0 }, mmi.ptMinTrackSize.y, mmi.ptMaxTrackSize.y);
+    let x = if left { r0.right - w } else { r0.left };
+    let y = if top { r0.bottom - h } else { r0.top };
+    SetWindowPos(hwnd, std::ptr::null_mut(), x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 unsafe fn call_old(old: isize, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if old == 0 {
         return DefWindowProcW(hwnd, msg, wparam, lparam);
@@ -317,32 +407,77 @@ unsafe fn call_old(old: isize, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
     CallWindowProcW(f, hwnd, msg, wparam, lparam)
 }
 
-/// Turn the winit window into a frameless one that keeps native resize,
-/// snapping, minimize/maximize animations and the DWM shadow.
+/// Build number from RtlGetVersion (GetVersionEx lies without a manifest entry).
+fn windows_build() -> Option<u32> {
+    #[repr(C)]
+    struct OsVersionInfoW {
+        size: u32,
+        major: u32,
+        minor: u32,
+        build: u32,
+        platform: u32,
+        csd: [u16; 128],
+    }
+    unsafe {
+        use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+        let ntdll = GetModuleHandleW(wide("ntdll.dll").as_ptr());
+        if ntdll.is_null() {
+            return None;
+        }
+        let p = GetProcAddress(ntdll, b"RtlGetVersion\0".as_ptr())?;
+        let f: unsafe extern "system" fn(*mut OsVersionInfoW) -> i32 = std::mem::transmute(p);
+        let mut v: OsVersionInfoW = std::mem::zeroed();
+        v.size = std::mem::size_of::<OsVersionInfoW>() as u32;
+        (f(&mut v) == 0).then_some(v.build)
+    }
+}
+
+/// Windows 10 (build < 22000) draws the native caption into the DWM frame of a
+/// window that keeps WS_CAPTION, even though WM_NCCALCSIZE removes the
+/// non-client area. `SHOBDO_FRAME=win10|win11` forces either path (testing aid).
+fn wants_legacy_frame() -> bool {
+    match std::env::var("SHOBDO_FRAME").ok().as_deref() {
+        Some("win10") => true,
+        Some("win11") => false,
+        _ => windows_build().is_some_and(|b| b < 22000),
+    }
+}
+
+pub fn is_legacy_frame() -> bool {
+    LEGACY_FRAME.load(Ordering::Relaxed)
+}
+
+/// Turn the winit window into a frameless one.
+///
+/// Windows 11: keeps WS_CAPTION / WS_THICKFRAME for native resize, snapping,
+/// min/max animations and the DWM shadow; WM_NCCALCSIZE hides the frame.
+///
+/// Windows 10: WS_CAPTION / WS_THICKFRAME are removed (and kept removed via
+/// WM_STYLECHANGING, since winit re-applies them) so Windows has no caption to
+/// draw; edge resizing still goes through the WM_NCHITTEST border codes.
 pub fn install_frameless(hwnd: HWND) {
     MAIN_HWND.store(hwnd as isize, Ordering::SeqCst);
+    let legacy = wants_legacy_frame();
+    LEGACY_FRAME.store(legacy, Ordering::SeqCst);
     unsafe {
         let old = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, frameless_proc as usize as isize);
         OLD_PROC.store(old, Ordering::SeqCst);
 
-        // addWindowAnimation
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
-        SetWindowLongPtrW(
-            hwnd,
-            GWL_STYLE,
-            (style | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU) as isize,
-        );
+        let style = if legacy {
+            (style | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU) & !LEGACY_STRIP
+        } else {
+            // addWindowAnimation
+            style | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU
+        };
+        SetWindowLongPtrW(hwnd, GWL_STYLE, style as isize);
 
-        // addShadowEffect
-        let margins = MARGINS { cxLeftWidth: -1, cxRightWidth: -1, cyTopHeight: -1, cyBottomHeight: -1 };
-        DwmExtendFrameIntoClientArea(hwnd, &margins);
-        let pref: i32 = 2; // DWMWCP_ROUND
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
-            &pref as *const _ as *const _,
-            std::mem::size_of::<i32>() as u32,
-        );
+        if !legacy {
+            // addShadowEffect
+            let margins = MARGINS { cxLeftWidth: -1, cxRightWidth: -1, cyTopHeight: -1, cyBottomHeight: -1 };
+            DwmExtendFrameIntoClientArea(hwnd, &margins);
+            set_round_corners(hwnd);
+        }
         SetWindowPos(
             hwnd,
             std::ptr::null_mut(),
@@ -356,6 +491,9 @@ pub fn install_frameless(hwnd: HWND) {
 }
 
 pub fn set_dark_titlebar(hwnd: HWND, dark: bool) {
+    if is_legacy_frame() {
+        return; // Windows 10 mode has no caption for this attribute to tint
+    }
     unsafe {
         let v: i32 = dark as i32;
         DwmSetWindowAttribute(hwnd, 20, &v as *const _ as *const _, 4); // DWMWA_USE_IMMERSIVE_DARK_MODE
