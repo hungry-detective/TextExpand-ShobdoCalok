@@ -437,16 +437,11 @@ fn insert_text(text: &str) {
     if text.is_empty() {
         return;
     }
-    // Short single-line snippets ({date}, {time}, names…) are typed in one
-    // SendInput batch so the clipboard is never touched: clipboard monitors
-    // (which may ignore the "exclude from history" flag) record nothing and
-    // the user's clipboard stays as it was. Long or multi-line snippets use
-    // clipboard paste, which is atomic and fast for big text; typing is the
+    // Clipboard paste is atomic and never drops characters. (Typing unicode
+    // key events was tried for short snippets and came out garbled —
+    // repeated or missing characters — in some apps.) Typing is only a
     // fallback when the clipboard is unavailable.
-    let short = !text.contains(['\n', '\r', '\t']) && text.chars().count() <= TYPE_MAX_CHARS;
-    if short {
-        type_batch(&text);
-    } else if paste_clipboard(&text).is_err() {
+    if paste_clipboard(&text).is_err() {
         type_reliable(&text);
     }
     if let Some(ci) = cursor_index {
@@ -456,23 +451,6 @@ fn insert_text(text: &str) {
             std::thread::sleep(Duration::from_millis(4));
         }
     }
-}
-
-/// Longest snippet that is typed instead of pasted.
-const TYPE_MAX_CHARS: usize = 100;
-
-/// Type `text` as unicode key events in a single `SendInput` call, so the
-/// user's own keystrokes cannot interleave with it.
-fn type_batch(text: &str) {
-    let mut inputs = Vec::with_capacity(text.len() * 4);
-    let mut buf = [0u16; 2];
-    for ch in text.chars() {
-        for unit in ch.encode_utf16(&mut buf).iter() {
-            inputs.push(key_input(0, *unit, KEYEVENTF_UNICODE));
-            inputs.push(key_input(0, *unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
-        }
-    }
-    send(&inputs);
 }
 
 /// Type `text` character-by-character with small delays.
@@ -497,19 +475,30 @@ pub fn clipboard_text() -> String {
     arboard::Clipboard::new().and_then(|mut c| c.get_text()).unwrap_or_default()
 }
 
-/// Put text on the clipboard without it showing up in Windows clipboard
-/// history (Win+V), cloud clipboard or clipboard managers. The snippet is
-/// only on the clipboard for the paste, and restoring the old contents must
-/// not add a duplicate history entry either.
-fn set_clipboard_private(text: String) -> Result<(), arboard::Error> {
+/// Put the snippet on the clipboard, kept out of Windows clipboard history
+/// (Win+V) and cloud clipboard. Clipboard monitors open the clipboard briefly
+/// after every change, so a write can hit a locked clipboard: retry for up
+/// to ~1 s rather than falling back to (less reliable) typing.
+fn set_clipboard_private(text: &str) -> Result<(), arboard::Error> {
     use arboard::SetExtWindows;
-    arboard::Clipboard::new()?.set().exclude_from_monitoring().text(text)
+    let mut last_err = None;
+    for attempt in 0..20 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        match arboard::Clipboard::new().and_then(|mut cb| cb.set().exclude_from_monitoring().text(text.to_string())) {
+            Ok(()) => return Ok(()),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap())
 }
 
-/// Paste via the clipboard, restoring the previous contents afterwards.
+/// Paste via the clipboard. The snippet stays on the clipboard afterwards:
+/// the previous contents are deliberately NOT written back, because that
+/// re-write shows up as a new "copy" of the old text in clipboard monitors.
 fn paste_clipboard(text: &str) -> Result<(), arboard::Error> {
-    let old_clip = clipboard_text();
-    set_clipboard_private(text.to_string())?;
+    set_clipboard_private(text)?;
     std::thread::sleep(Duration::from_millis(60));
     // Press Ctrl+V with Ctrl held down for a stable paste
     send(&[key_input(VK_CONTROL, 0, 0)]);
@@ -520,12 +509,8 @@ fn paste_clipboard(text: &str) -> Result<(), arboard::Error> {
     std::thread::sleep(Duration::from_millis(10));
     send(&[key_input(VK_CONTROL, 0, KEYEVENTF_KEYUP)]);
     // Browsers and Electron apps read the clipboard asynchronously after
-    // Ctrl+V; restoring too early made them paste the old clipboard (or
-    // nothing) instead of the snippet.
-    std::thread::sleep(Duration::from_millis(300));
-    if !old_clip.is_empty() {
-        let _ = set_clipboard_private(old_clip);
-    }
+    // Ctrl+V; give them time before another expansion can replace it.
+    std::thread::sleep(Duration::from_millis(150));
     Ok(())
 }
 
