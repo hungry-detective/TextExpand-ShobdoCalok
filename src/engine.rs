@@ -437,9 +437,16 @@ fn insert_text(text: &str) {
     if text.is_empty() {
         return;
     }
-    // Clipboard paste is atomic and never drops characters; typing is only a
+    // Short single-line snippets ({date}, {time}, names…) are typed in one
+    // SendInput batch so the clipboard is never touched: clipboard monitors
+    // (which may ignore the "exclude from history" flag) record nothing and
+    // the user's clipboard stays as it was. Long or multi-line snippets use
+    // clipboard paste, which is atomic and fast for big text; typing is the
     // fallback when the clipboard is unavailable.
-    if paste_clipboard(&text).is_err() {
+    let short = !text.contains(['\n', '\r', '\t']) && text.chars().count() <= TYPE_MAX_CHARS;
+    if short {
+        type_batch(&text);
+    } else if paste_clipboard(&text).is_err() {
         type_reliable(&text);
     }
     if let Some(ci) = cursor_index {
@@ -449,6 +456,23 @@ fn insert_text(text: &str) {
             std::thread::sleep(Duration::from_millis(4));
         }
     }
+}
+
+/// Longest snippet that is typed instead of pasted.
+const TYPE_MAX_CHARS: usize = 100;
+
+/// Type `text` as unicode key events in a single `SendInput` call, so the
+/// user's own keystrokes cannot interleave with it.
+fn type_batch(text: &str) {
+    let mut inputs = Vec::with_capacity(text.len() * 4);
+    let mut buf = [0u16; 2];
+    for ch in text.chars() {
+        for unit in ch.encode_utf16(&mut buf).iter() {
+            inputs.push(key_input(0, *unit, KEYEVENTF_UNICODE));
+            inputs.push(key_input(0, *unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
+        }
+    }
+    send(&inputs);
 }
 
 /// Type `text` character-by-character with small delays.
