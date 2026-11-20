@@ -473,13 +473,19 @@ pub fn clipboard_text() -> String {
     arboard::Clipboard::new().and_then(|mut c| c.get_text()).unwrap_or_default()
 }
 
+/// Put text on the clipboard without it showing up in Windows clipboard
+/// history (Win+V), cloud clipboard or clipboard managers. The snippet is
+/// only on the clipboard for the paste, and restoring the old contents must
+/// not add a duplicate history entry either.
+fn set_clipboard_private(text: String) -> Result<(), arboard::Error> {
+    use arboard::SetExtWindows;
+    arboard::Clipboard::new()?.set().exclude_from_monitoring().text(text)
+}
+
 /// Paste via the clipboard, restoring the previous contents afterwards.
 fn paste_clipboard(text: &str) -> Result<(), arboard::Error> {
     let old_clip = clipboard_text();
-    {
-        let mut cb = arboard::Clipboard::new()?;
-        cb.set_text(text.to_string())?;
-    }
+    set_clipboard_private(text.to_string())?;
     std::thread::sleep(Duration::from_millis(60));
     // Press Ctrl+V with Ctrl held down for a stable paste
     send(&[key_input(VK_CONTROL, 0, 0)]);
@@ -494,9 +500,7 @@ fn paste_clipboard(text: &str) -> Result<(), arboard::Error> {
     // nothing) instead of the snippet.
     std::thread::sleep(Duration::from_millis(300));
     if !old_clip.is_empty() {
-        if let Ok(mut cb) = arboard::Clipboard::new() {
-            let _ = cb.set_text(old_clip);
-        }
+        let _ = set_clipboard_private(old_clip);
     }
     Ok(())
 }
