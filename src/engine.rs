@@ -12,9 +12,10 @@
 
 use parking_lot::Mutex;
 use regex::Regex;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, LazyLock, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::format::{Item, StrftimeItems};
 use windows_sys::Win32::Foundation::*;
@@ -29,6 +30,39 @@ use crate::store::SnippetStore;
 const INJECT_MAGIC: usize = 0x5348_4243; // "SHBC"
 
 static ENGINE: OnceLock<Arc<Engine>> = OnceLock::new();
+
+/// Hook → worker queue. The low-level hook callbacks only snapshot the event
+/// and return; all matching/expansion work happens on the worker thread.
+/// Windows silently removes a WH_KEYBOARD_LL / WH_MOUSE_LL hook whose callback
+/// overruns `LowLevelHooksTimeout` (easy to hit on the first keystroke after
+/// the PC idled and the process was paged out), so the callbacks must never
+/// block on a lock or do real work.
+static HOOK_TX: OnceLock<Sender<HookMsg>> = OnceLock::new();
+
+/// `GetTickCount` time of the newest input event either hook saw. Compared to
+/// `GetLastInputInfo` to notice a hook that Windows removed without telling us.
+static LAST_HOOK_TICK: AtomicU32 = AtomicU32::new(0);
+
+/// Last time the watchdog restarted the hook because it looked stalled.
+static LAST_STALL_RESTART: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Foreground window of the previous key event (buffer is reset on change).
+static LAST_FG: AtomicIsize = AtomicIsize::new(0);
+
+enum HookMsg {
+    Key(KeyEvt),
+    /// A mouse click: the caret may have moved, so typed context is stale.
+    Click,
+}
+
+struct KeyEvt {
+    vk: u32,
+    scan: u32,
+    /// Snapshot of the modifier/lock state at the moment of the key press.
+    state: [u8; 256],
+    fg: isize,
+    hkl: isize,
+}
 
 pub struct Engine {
     store: Arc<Mutex<SnippetStore>>,
@@ -56,6 +90,14 @@ impl Engine {
             is_dark: AtomicBool::new(is_dark),
         });
         let _ = ENGINE.set(e.clone());
+        let (tx, rx) = channel::<HookMsg>();
+        if HOOK_TX.set(tx).is_ok() {
+            let worker = e.clone();
+            std::thread::Builder::new()
+                .name("expansion-worker".into())
+                .spawn(move || worker.worker_loop(rx))
+                .ok();
+        }
         e
     }
 
@@ -133,14 +175,46 @@ impl Engine {
 
     // ── Keyboard listener ────────────────────────────────────────────────────
 
-    fn on_key_down(self: &Arc<Self>, kb: &KBDLLHOOKSTRUCT) {
-        if kb.dwExtraInfo == INJECT_MAGIC || self.injecting.load(Ordering::SeqCst) {
-            return;
+    fn worker_loop(self: Arc<Self>, rx: Receiver<HookMsg>) {
+        while let Ok(msg) = rx.recv() {
+            match msg {
+                HookMsg::Click => self.buffer.lock().clear(),
+                HookMsg::Key(k) => self.on_key_down(&k),
+            }
         }
+    }
+
+    /// True when the hook thread is running but Windows has stopped feeding
+    /// it: the system saw input more than 3 s after the newest event our hooks
+    /// received. (Windows removes timed-out low-level hooks silently, so the
+    /// thread stays alive and `is_alive()` alone cannot tell.)
+    pub fn hook_stalled(&self) -> bool {
+        if !self.is_alive() {
+            return false;
+        }
+        let mut li = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+        if unsafe { GetLastInputInfo(&mut li) } == 0 {
+            return false;
+        }
+        let gap = li.dwTime.wrapping_sub(LAST_HOOK_TICK.load(Ordering::SeqCst)) as i32;
+        if gap <= 3000 {
+            return false;
+        }
+        // Back off so input our hooks can never see (e.g. an elevated window
+        // in front) cannot cause a restart loop.
+        let mut last = LAST_STALL_RESTART.lock();
+        if last.map(|t| t.elapsed() < Duration::from_secs(60)).unwrap_or(false) {
+            return false;
+        }
+        *last = Some(Instant::now());
+        true
+    }
+
+    fn on_key_down(self: &Arc<Self>, k: &KeyEvt) {
         if !self.enabled.load(Ordering::SeqCst) {
             return;
         }
-        let vk = kb.vkCode as u16;
+        let vk = k.vk as u16;
         // Modifier keys on their own never change the buffer.
         if matches!(
             vk,
@@ -150,11 +224,16 @@ impl Engine {
             return;
         }
         let mut buf = self.buffer.lock();
+        // Typing in a different window: what was typed before is not in front
+        // of the caret any more.
+        if LAST_FG.swap(k.fg, Ordering::SeqCst) != k.fg {
+            buf.clear();
+        }
         if vk == VK_BACK {
             buf.pop();
             return;
         }
-        match unsafe { key_to_chars(kb) } {
+        match unsafe { key_to_chars(k) } {
             KeyChars::Chars(chars) => {
                 buf.extend(chars);
                 // Trim buffer — no abbreviation should be longer than 40 chars
@@ -183,8 +262,11 @@ impl Engine {
                 if let Some(content) = abbrevs.get(&target) {
                     // Only expand when the character before the abbreviation is
                     // a word boundary — prevents false triggers inside words.
+                    // Abbreviations that start with punctuation (".date") carry
+                    // their own boundary and expand even right after a word.
                     let prev = if length < n { Some(buf[n - length - 1]) } else { None };
-                    if prev.map(is_word_char).unwrap_or(false) {
+                    let self_bounded = target.chars().next().map(|c| !is_word_char(c)).unwrap_or(false);
+                    if !self_bounded && prev.map(is_word_char).unwrap_or(false) {
                         continue;
                     }
                     found = Some((target, content.clone()));
@@ -220,7 +302,22 @@ enum KeyChars {
     None,
 }
 
-unsafe fn key_to_chars(kb: &KBDLLHOOKSTRUCT) -> KeyChars {
+unsafe fn key_to_chars(k: &KeyEvt) -> KeyChars {
+    let mut out = [0u16; 8];
+    // flag 0x4: do not change keyboard state (keeps dead keys working for the target app)
+    let n = ToUnicodeEx(k.vk, k.scan, k.state.as_ptr(), out.as_mut_ptr(), out.len() as i32, 0x4, k.hkl as HKL);
+    if n < 0 {
+        return KeyChars::Dead;
+    }
+    if n == 0 {
+        return KeyChars::None;
+    }
+    let s = String::from_utf16_lossy(&out[..n as usize]);
+    KeyChars::Chars(s.chars().collect())
+}
+
+/// Snapshot what `ToUnicodeEx` needs (all cheap, non-blocking calls).
+unsafe fn snapshot_key(kb: &KBDLLHOOKSTRUCT) -> KeyEvt {
     let fg = GetForegroundWindow();
     let tid = if fg.is_null() { 0 } else { GetWindowThreadProcessId(fg, std::ptr::null_mut()) };
     let hkl = GetKeyboardLayout(tid);
@@ -236,27 +333,40 @@ unsafe fn key_to_chars(kb: &KBDLLHOOKSTRUCT) -> KeyChars {
     if (GetKeyState(VK_NUMLOCK as i32) & 1) != 0 {
         state[VK_NUMLOCK as usize] = 0x01;
     }
-    let mut out = [0u16; 8];
-    // flag 0x4: do not change keyboard state (keeps dead keys working for the target app)
-    let n = ToUnicodeEx(kb.vkCode, kb.scanCode, state.as_ptr(), out.as_mut_ptr(), out.len() as i32, 0x4, hkl);
-    if n < 0 {
-        return KeyChars::Dead;
-    }
-    if n == 0 {
-        return KeyChars::None;
-    }
-    let s = String::from_utf16_lossy(&out[..n as usize]);
-    KeyChars::Chars(s.chars().collect())
+    KeyEvt { vk: kb.vkCode, scan: kb.scanCode, state, fg: fg as isize, hkl: hkl as isize }
 }
 
 unsafe extern "system" fn ll_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code == HC_ACTION as i32 && (wparam as u32 == WM_KEYDOWN || wparam as u32 == WM_SYSKEYDOWN) {
-        if let Some(e) = ENGINE.get() {
-            let kb = &*(lparam as *const KBDLLHOOKSTRUCT);
-            e.on_key_down(kb);
+    if code == HC_ACTION as i32 {
+        let kb = &*(lparam as *const KBDLLHOOKSTRUCT);
+        LAST_HOOK_TICK.store(kb.time, Ordering::SeqCst);
+        if (wparam as u32 == WM_KEYDOWN || wparam as u32 == WM_SYSKEYDOWN) && kb.dwExtraInfo != INJECT_MAGIC {
+            if let (Some(e), Some(tx)) = (ENGINE.get(), HOOK_TX.get()) {
+                if !e.injecting.load(Ordering::SeqCst) {
+                    let _ = tx.send(HookMsg::Key(snapshot_key(kb)));
+                }
+            }
         }
     }
     CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+}
+
+unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code == HC_ACTION as i32 {
+        let ms = &*(lparam as *const MSLLHOOKSTRUCT);
+        LAST_HOOK_TICK.store(ms.time, Ordering::SeqCst);
+        if matches!(wparam as u32, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN) {
+            if let Some(tx) = HOOK_TX.get() {
+                let _ = tx.send(HookMsg::Click);
+            }
+        }
+    }
+    CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+}
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetTickCount() -> u32;
 }
 
 unsafe fn hook_thread(tx: std::sync::mpsc::Sender<bool>) {
@@ -264,11 +374,15 @@ unsafe fn hook_thread(tx: std::sync::mpsc::Sender<bool>) {
         let _ = tx.send(false);
         return;
     };
-    let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(ll_proc), GetModuleHandleW(std::ptr::null()), 0);
+    let hmod = GetModuleHandleW(std::ptr::null());
+    let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(ll_proc), hmod, 0);
     if hook.is_null() {
         let _ = tx.send(false);
         return;
     }
+    // Clicks reset the typed context and feed the stall detector (optional).
+    let mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), hmod, 0);
+    LAST_HOOK_TICK.store(GetTickCount(), Ordering::SeqCst);
     engine.hook_tid.store(GetCurrentThreadId(), Ordering::SeqCst);
     engine.hook_alive.store(true, Ordering::SeqCst);
     let _ = tx.send(true);
@@ -276,6 +390,9 @@ unsafe fn hook_thread(tx: std::sync::mpsc::Sender<bool>) {
     while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
+    }
+    if !mouse_hook.is_null() {
+        UnhookWindowsHookEx(mouse_hook);
     }
     UnhookWindowsHookEx(hook);
     engine.hook_alive.store(false, Ordering::SeqCst);
@@ -372,7 +489,10 @@ fn paste_clipboard(text: &str) -> Result<(), arboard::Error> {
     send(&[key_input(0x56, 0, KEYEVENTF_KEYUP)]);
     std::thread::sleep(Duration::from_millis(10));
     send(&[key_input(VK_CONTROL, 0, KEYEVENTF_KEYUP)]);
-    std::thread::sleep(Duration::from_millis(60));
+    // Browsers and Electron apps read the clipboard asynchronously after
+    // Ctrl+V; restoring too early made them paste the old clipboard (or
+    // nothing) instead of the snippet.
+    std::thread::sleep(Duration::from_millis(300));
     if !old_clip.is_empty() {
         if let Ok(mut cb) = arboard::Clipboard::new() {
             let _ = cb.set_text(old_clip);

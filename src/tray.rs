@@ -23,6 +23,11 @@ pub enum TrayAction {
 }
 
 const WM_TRAY: u32 = WM_APP + 1;
+
+/// GUID_CONSOLE_DISPLAY_STATE (SystemServices feature not enabled).
+const GUID_CONSOLE_DISPLAY_STATE: windows_sys::core::GUID =
+    windows_sys::core::GUID::from_u128(0x6fe69556_704a_47a0_8f24_c28d936fda47);
+static DISPLAY_OFF: AtomicBool = AtomicBool::new(false);
 const ID_SHOW: usize = 1001;
 const ID_TOGGLE: usize = 1002;
 const ID_UPDATE: usize = 1003;
@@ -234,6 +239,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             // PBT_APMRESUMECRITICAL (0x6)
             if wparam == 0x12 || wparam == 0x7 || wparam == 0x6 {
                 dispatch(TrayAction::SystemResumed);
+            } else if wparam as u32 == PBT_POWERSETTINGCHANGE && lparam != 0 {
+                // Display turned back on after an idle screen-off (no sleep,
+                // no lock, so neither notification above fires).
+                let ps = &*(lparam as *const windows_sys::Win32::System::Power::POWERBROADCAST_SETTING);
+                let g = &ps.PowerSetting;
+                let want = &GUID_CONSOLE_DISPLAY_STATE;
+                let is_display = g.data1 == want.data1 && g.data2 == want.data2 && g.data3 == want.data3 && g.data4 == want.data4;
+                if is_display && ps.DataLength >= 1 {
+                    let on = ps.Data[0] == 1; // 0 off, 1 on, 2 dimmed
+                    let was_off = DISPLAY_OFF.swap(ps.Data[0] == 0, Ordering::SeqCst);
+                    if on && was_off {
+                        dispatch(TrayAction::SystemResumed);
+                    }
+                }
             }
             return 1;
         }
@@ -289,6 +308,11 @@ unsafe fn tray_thread() {
     // which is why expansion stopped working after sleep.
     windows_sys::Win32::System::Power::RegisterSuspendResumeNotification(hwnd as _, 0 /* DEVICE_NOTIFY_WINDOW_HANDLE */);
     windows_sys::Win32::System::RemoteDesktop::WTSRegisterSessionNotification(hwnd, 0 /* NOTIFY_FOR_THIS_SESSION */);
+    windows_sys::Win32::System::Power::RegisterPowerSettingNotification(
+        hwnd as _,
+        &GUID_CONSOLE_DISPLAY_STATE,
+        0, /* DEVICE_NOTIFY_WINDOW_HANDLE */
+    );
     let mut msg: MSG = std::mem::zeroed();
     while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
         TranslateMessage(&msg);

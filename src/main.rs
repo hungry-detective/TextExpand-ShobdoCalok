@@ -164,7 +164,7 @@ fn main() {
             let mut last_wall = std::time::SystemTime::now();
             loop {
                 let fast = t0.elapsed() < Duration::from_secs(30);
-                let interval = Duration::from_millis(if fast { 500 } else { 5000 });
+                let interval = Duration::from_millis(if fast { 500 } else { 2000 });
                 std::thread::sleep(interval);
                 // Sleep/hibernate detection: the wall clock jumped far more than
                 // we slept. Windows silently drops low-level hooks across sleep
@@ -180,6 +180,11 @@ fn main() {
                 }
                 if engine.is_enabled() && !engine.is_alive() {
                     eprintln!("[Main] Keyboard hook is dead — auto-restarting");
+                    engine.restart();
+                } else if engine.is_enabled() && engine.hook_stalled() {
+                    // Thread alive but Windows stopped calling the hook (it
+                    // silently removes timed-out hooks, e.g. after idle).
+                    eprintln!("[Main] Keyboard hook stopped receiving input — re-installing");
                     engine.restart();
                 }
             }
